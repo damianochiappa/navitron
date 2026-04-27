@@ -6,7 +6,7 @@
 
   <name>Navitron</name>
   <description>Advanced GIS Tool</description>
-  <author email="damiano.chiappa@gmail.com">Navitron</author>
+  <author>Damiano Chiappa</author>
 
   <content src="geoapp.html" />
 
