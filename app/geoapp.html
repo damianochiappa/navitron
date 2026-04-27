@@ -1,0 +1,999 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#0f1117">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Navitron</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="apple-mobile-web-app-title" content="Navitron">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <!-- Leaflet core -->
+  <link rel="stylesheet" href="lib/leaflet.css">
+  <!-- Leaflet Draw -->
+  <link rel="stylesheet" href="lib/leaflet-draw/leaflet.draw.css">
+  <!-- Polyline Measure -->
+  <link rel="stylesheet" href="lib/Leaflet.PolylineMeasure.css">
+  <!-- OpenLayers (WMS reprojection overlay) -->
+  <link rel="stylesheet" href="lib/ol.css">
+  <!-- App styles -->
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<!-- ===== SPLASH ===== -->
+<div id="splash">
+  <div id="splash-icon">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+      <defs>
+        <linearGradient id="sp-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#0d1b3e"/>
+          <stop offset="100%" stop-color="#0a2a4a"/>
+        </linearGradient>
+        <radialGradient id="sp-globe" cx="38%" cy="32%" r="65%">
+          <stop offset="0%" stop-color="#1a3a6e"/>
+          <stop offset="60%" stop-color="#0e2448"/>
+          <stop offset="100%" stop-color="#060f1e"/>
+        </radialGradient>
+        <clipPath id="sp-clip"><circle cx="48" cy="62" r="28"/></clipPath>
+      </defs>
+      <rect width="96" height="96" rx="20" fill="url(#sp-bg)"/>
+      <circle cx="48" cy="62" r="28" fill="url(#sp-globe)"/>
+      <g clip-path="url(#sp-clip)" fill="none" stroke="#5dade2" stroke-width="0.8" opacity="0.55">
+        <line x1="48" y1="34" x2="48" y2="90"/>
+        <ellipse cx="48" cy="62" rx="14" ry="28"/>
+        <ellipse cx="48" cy="62" rx="24" ry="28"/>
+        <line x1="20" y1="52" x2="76" y2="52"/>
+        <line x1="20" y1="62" x2="76" y2="62"/>
+        <line x1="20" y1="72" x2="76" y2="72"/>
+      </g>
+      <circle cx="48" cy="62" r="28" fill="none" stroke="#5dade2" stroke-width="1.5"/>
+      <circle cx="48" cy="23" r="13" fill="none" stroke="#5dade2" stroke-width="0.8" opacity="0.45"/>
+      <g stroke="#5dade2" stroke-width="1" opacity="0.6">
+        <line x1="48" y1="10" x2="48" y2="13"/>
+        <line x1="48" y1="33" x2="48" y2="36"/>
+        <line x1="35" y1="23" x2="38" y2="23"/>
+        <line x1="58" y1="23" x2="61" y2="23"/>
+      </g>
+      <polygon points="48,10 51,23 48,21 45,23" fill="#ff4757"/>
+      <polygon points="48,36 45,23 48,25 51,23" fill="rgba(220,230,255,0.55)"/>
+      <polygon points="61,23 48,20 48,22 48,26" fill="rgba(220,230,255,0.55)"/>
+      <polygon points="35,23 48,26 48,24 48,20" fill="rgba(220,230,255,0.55)"/>
+      <circle cx="48" cy="23" r="2.8" fill="#5dade2"/>
+      <circle cx="48" cy="23" r="1.2" fill="#fff"/>
+      <text x="48" y="9.5" font-family="Arial Black,Arial,sans-serif" font-size="5.5"
+            font-weight="900" fill="#ff4757" text-anchor="middle" letter-spacing="0.5">N</text>
+      <rect width="95" height="95" x=".5" y=".5" rx="19.5" fill="none"
+            stroke="rgba(91,156,246,0.22)" stroke-width="1"/>
+    </svg>
+  </div>
+  <div class="splash-name">Navitron</div>
+  <div class="splash-sub">Proudly autopiloted by AI</div>
+  <div class="splash-bar-wrap"><div class="splash-bar"></div></div>
+</div>
+
+<!-- ===== ONBOARDING ===== -->
+<div id="onboarding" class="hidden">
+  <div id="ob-track">
+
+    <div class="ob-slide">
+      <div class="ob-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><circle cx="24" cy="24" r="20" stroke="var(--accent)"/><circle cx="24" cy="24" r="6" stroke="var(--accent)"/><line x1="24" y1="4" x2="24" y2="10" stroke="var(--accent)"/><line x1="24" y1="38" x2="24" y2="44" stroke="var(--accent)"/><line x1="4" y1="24" x2="10" y2="24" stroke="var(--accent)"/><line x1="38" y1="24" x2="44" y2="24" stroke="var(--accent)"/></svg>
+      </div>
+      <h2 class="ob-title">Welcome to Navitron</h2>
+      <p class="ob-text">Your GIS companion for Android. Explore maps, track your position, and work with geographic data — with cached tile support for offline use.</p>
+    </div>
+
+    <div class="ob-slide">
+      <div class="ob-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="30" width="36" height="8" rx="2" stroke="var(--accent)"/><rect x="6" y="20" width="36" height="8" rx="2" stroke="#6c5ce7"/><rect x="6" y="10" width="36" height="8" rx="2" stroke="var(--accent-h)"/></svg>
+      </div>
+      <h2 class="ob-title">Maps &amp; Layers</h2>
+      <p class="ob-text">Add base maps (WMS, WMTS, ArcGIS) and overlays (WFS, KML, GeoJSON). Control opacity, colors, and hollow style per layer.</p>
+    </div>
+
+    <div class="ob-slide">
+      <div class="ob-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><circle cx="24" cy="20" r="8" stroke="var(--accent)"/><path d="M24 28 C14 34 10 46 24 44 C38 46 34 34 24 28Z" stroke="var(--accent)"/><line x1="24" y1="4" x2="24" y2="12" stroke="var(--accent)"/></svg>
+      </div>
+      <h2 class="ob-title">GPS &amp; Tracking</h2>
+      <p class="ob-text">Follow your real-time position, record tracks, and measure distances. Flight mode activates automatically when airborne (AGL &gt; 200 m).</p>
+    </div>
+
+    <div class="ob-slide">
+      <div class="ob-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="8" width="32" height="32" rx="3" stroke="var(--accent)"/><rect x="14" y="14" width="20" height="20" rx="2" fill="rgba(255,204,0,.18)" stroke="#ffcc00"/><circle cx="24" cy="24" r="4" fill="#ffcc00" stroke="none"/></svg>
+      </div>
+      <h2 class="ob-title">WFS Selection</h2>
+      <p class="ob-text">Activate Select mode to tap and highlight vector features. Pick your target layer from the picker, then export the selection as KML.</p>
+    </div>
+
+    <div class="ob-slide">
+      <div class="ob-icon">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><circle cx="24" cy="24" r="20" stroke="var(--success)"/><polyline points="14,24 21,31 34,17" stroke="var(--success)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <h2 class="ob-title">You're all set!</h2>
+      <p class="ob-text">Tap the <strong>?</strong> tab in the side panel anytime to open the full guide with all features explained in detail.</p>
+      <button id="ob-guide-btn">Open Guide</button>
+    </div>
+
+  </div>
+
+  <div id="ob-dots">
+    <span class="ob-dot active"></span>
+    <span class="ob-dot"></span>
+    <span class="ob-dot"></span>
+    <span class="ob-dot"></span>
+    <span class="ob-dot"></span>
+  </div>
+
+  <button id="ob-skip">Skip</button>
+  <button id="ob-next">Next ›</button>
+</div>
+
+<!-- ===== APP ===== -->
+<div id="app">
+
+  <!-- TOP BAR -->
+  <header id="topbar">
+    <button id="sidebar-toggle" title="Toggle sidebar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+    </button>
+
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/>
+        <line x1="12" y1="3" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="21"/>
+        <line x1="3" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="21" y2="12"/>
+      </svg>
+      Navitron
+    </div>
+
+    <div id="topbar-search">
+      <input type="text" id="search-input" placeholder="Search place or address&#8230;" autocomplete="off">
+      <button class="search-clear-btn" id="search-clear" title="Clear">&#10005;</button>
+    </div>
+
+    <div id="topbar-coords">
+      <div class="coord-block">
+        <span class="label">LAT</span>
+        <span class="val" id="tc-lat">--</span>
+      </div>
+      <div class="coord-block">
+        <span class="label">LON</span>
+        <span class="val" id="tc-lon">--</span>
+      </div>
+      <div class="coord-block">
+        <span class="label">MGRS</span>
+        <span class="val" id="tc-mgrs">--</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <div id="main">
+
+    <!-- SIDEBAR -->
+    <aside id="sidebar" class="collapsed">
+      <div class="tab-bar">
+        <button class="tab-btn active" data-panel="layers">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:2px"><polygon points="12,2 2,7 12,12 22,7"/><polyline points="2,17 12,22 22,17"/><polyline points="2,12 12,17 22,12"/></svg>
+          Layers
+        </button>
+        <button class="tab-btn" data-panel="draw">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:2px"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>
+          Draw
+        </button>
+        <button class="tab-btn" data-panel="bookmarks">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:2px"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
+          Saved
+        </button>
+        <button class="tab-btn" data-panel="offline">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:2px"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          Cache
+        </button>
+        <button class="tab-btn" data-panel="guide">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:2px"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Help
+        </button>
+      </div>
+
+      <!-- PANEL: LAYERS -->
+      <div class="panel active" id="panel-layers">
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+            Base map
+          </div>
+          <div class="card-body">
+            <div class="basemap-list" id="basemap-list">
+              <label class="basemap-item"><input type="radio" name="basemap" value="osm" checked> <span>OpenTopoMap</span></label>
+              <label class="basemap-item"><input type="radio" name="basemap" value="osm_std"> <span>OpenStreetMap</span></label>
+              <label class="basemap-item"><input type="radio" name="basemap" value="google_hybrid"> <span>Satellite Hybrid</span></label>
+              <label class="basemap-item"><input type="radio" name="basemap" value="google_maps"> <span>Street Map</span></label>
+              <label class="basemap-item"><input type="radio" name="basemap" value="esri_sat"> <span>ESRI Satellite</span></label>
+              <label class="basemap-item"><input type="radio" name="basemap" value="esri_topo"> <span>ESRI Topo</span></label>
+              <label class="basemap-item"><input type="radio" name="basemap" value="natgeo"> <span>NatGeo</span></label>
+            </div>
+            <button class="btn btn-secondary btn-full" id="ws-toggle-btn" style="font-size:11px;padding:6px 10px;margin-top:2px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add web map
+            </button>
+            <div id="ws-form" style="display:none;flex-direction:column;gap:7px;margin-top:4px;padding-top:8px;border-top:1px solid var(--border)">
+              <div class="field">
+                <label>Service type</label>
+                <select id="ws-type">
+                  <option value="wms">WMS (raster image)</option>
+                  <option value="wfs">WFS (vector features)</option>
+                  <option value="wmts">WMTS / XYZ tile</option>
+                  <option value="arcgis">ArcGIS MapServer</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>URL</label>
+                <input type="text" id="ws-url" placeholder="https://&#8230;" autocomplete="off" autocorrect="off" spellcheck="false">
+              </div>
+              <div class="field" id="ws-layers-field">
+                <label id="ws-layers-label">Layer / type name</label>
+                <div style="display:flex;gap:4px">
+                  <input type="text" id="ws-layers" placeholder="e.g. CP.CadastralParcel" style="flex:1;min-width:0">
+                  <button class="btn btn-secondary" id="btn-ws-caps" title="Fetch available layers" style="padding:5px 9px;flex-shrink:0;font-size:11px">Get layers</button>
+                </div>
+                <select id="ws-layers-select" style="display:none;margin-top:4px"></select>
+              </div>
+              <div class="field" id="ws-ver-field">
+                <label id="ws-ver-label">Version</label>
+                <select id="ws-version">
+                  <option value="1.1.1">1.1.1</option>
+                  <option value="1.3.0">1.3.0</option>
+                </select>
+              </div>
+              <div class="field" id="ws-minzoom-field" style="display:none">
+                <label>Min zoom to load features</label>
+                <input type="number" id="ws-minzoom" min="1" max="20" value="15">
+                <p class="hint" style="margin:3px 0 0">WFS fetches all features inside the viewport — at low zoom the bounding box covers huge areas and the server may return millions of items. Loading starts only above this zoom level to keep the app responsive.</p>
+              </div>
+              <div class="field" id="ws-filter-field" style="display:none">
+                <label>Filter attribute</label>
+                <input type="text" id="ws-filter-attr" placeholder="e.g. CODICE">
+              </div>
+              <div class="field" id="ws-filter-vals-field" style="display:none">
+                <label>Filter values</label>
+                <input type="text" id="ws-filter-vals" placeholder="e.g. A001,B002">
+                <p class="hint" style="margin:3px 0 0">Comma-separated — single: <code>A001</code>, multiple: <code>A001,B002</code>. Load the layer without filter first, tap a feature to see attribute names in the popup.</p>
+              </div>
+              <div class="field" id="ws-crs-field">
+                <label>CRS / SRS</label>
+                <select id="ws-crs">
+                  <option value="EPSG:4258" selected>EPSG:4258 (ETRS89 — Italian/EU WMS)</option>
+                  <option value="EPSG:4326">EPSG:4326 (WGS84 lat/lon)</option>
+                  <option value="EPSG:3857">EPSG:3857 (WebMercator)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Display name</label>
+                <input type="text" id="ws-name" placeholder="Map name (optional)">
+              </div>
+              <div class="field">
+                <label>Add as</label>
+                <select id="ws-use">
+                  <option value="basemap">Basemap (replaces current)</option>
+                  <option value="overlay" selected>Overlay (on top of basemap)</option>
+                </select>
+              </div>
+              <p class="hint" id="ws-hint"></p>
+              <button class="btn btn-primary btn-full" id="btn-ws-add">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            Map configuration
+          </div>
+          <div class="card-body" style="gap:6px">
+            <button class="btn btn-secondary btn-full" id="btn-cfg-save" style="font-size:11px;padding:6px 10px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+              Export configuration
+            </button>
+            <label class="btn btn-secondary btn-full" style="font-size:11px;padding:6px 10px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              Import configuration
+              <input type="file" id="cfg-file-input" accept=".json" style="display:none">
+            </label>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            Load file
+          </div>
+          <div class="card-body">
+            <div class="upload-area" id="upload-area">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              <p>Drag or click to upload</p>
+              <small>KML &middot; KMZ &middot; GeoJSON &middot; GPX</small>
+              <input type="file" id="file-input" accept=".kml,.kmz,.geojson,.json,.gpx" multiple style="display:none">
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12,2 2,7 12,12 22,7"/><polyline points="2,17 12,22 22,17"/><polyline points="2,12 12,17 22,12"/></svg>
+            Loaded layers
+          </div>
+          <div class="card-body" style="padding:8px">
+            <div id="layer-list">
+              <p class="layer-empty">No layers loaded</p>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /panel-layers -->
+
+      <!-- PANEL: DRAWING -->
+      <div class="panel" id="panel-draw">
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/></svg>
+            Drawing tools
+          </div>
+          <div class="card-body">
+            <p class="hint">Use the map toolbar to draw shapes. Tap a drawn shape to name it and export as KML.</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+            Manage drawings
+          </div>
+          <div class="card-body">
+            <button class="btn btn-success btn-full" id="btn-export-all-kml">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export all as KML
+            </button>
+            <button class="btn btn-secondary btn-full" id="btn-export-all-geojson">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export all as GeoJSON
+            </button>
+            <input type="file" id="import-geojson-input" accept=".json,.geojson" style="display:none">
+            <button class="btn btn-secondary btn-full" id="btn-import-geojson">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/><polyline points="17 8 12 3 7 8"/></svg>
+              Import GeoJSON drawings
+            </button>
+            <button class="btn btn-danger btn-full" id="btn-clear-draw">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+              Clear all drawings
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="9" r="6"/><circle cx="15" cy="15" r="6"/></svg>
+            KML Tools
+          </div>
+          <div class="card-body">
+            <p class="hint">Select one or more KML layers — all their polygons are merged into a single geometry removing internal boundaries. Holes and non-contiguous areas are preserved.</p>
+            <button class="btn btn-secondary btn-full" id="btn-dissolve">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><circle cx="9" cy="9" r="6"/><circle cx="15" cy="15" r="6"/></svg>
+              Dissolve KML features
+            </button>
+            <div id="dissolve-picker" class="hidden" style="margin-top:10px">
+              <div id="dissolve-picker-list" style="margin-bottom:8px"></div>
+              <div style="display:flex;gap:8px;margin-bottom:8px">
+                <button class="btn btn-secondary" id="dissolve-ok" style="flex:1" disabled>&#10003; Dissolve selected</button>
+                <button class="btn btn-secondary" id="dissolve-cancel">&#10005;</button>
+              </div>
+              <div id="dissolve-progress-wrap" class="hidden">
+                <div class="offline-progress-bg"><div class="offline-progress-fill" id="dissolve-progress-fill"></div></div>
+                <span class="hint" id="dissolve-progress-text" style="display:block;text-align:center;margin-top:3px">Processing…</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
+            Drawing statistics
+          </div>
+          <div class="card-body">
+            <div id="draw-stats" class="result-box show" style="display:block">
+              <span class="r-label">Drawn shapes: </span><span class="r-val" id="stat-count">0</span><br>
+              <span class="r-label">Last area: </span><span class="r-val" id="stat-area">--</span><br>
+              <span class="r-label">Last distance: </span><span class="r-val" id="stat-dist">--</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            GPS Track
+          </div>
+          <div class="card-body">
+            <button class="btn btn-success btn-full" id="btn-track-toggle">&#x25B6; Start track</button>
+            <div id="track-stats" class="result-box show" style="display:none;margin-top:8px">
+              <span class="r-label">Points: </span><span class="r-val" id="track-pts">0</span><br>
+              <span class="r-label">Distance: </span><span class="r-val" id="track-dist">0 m</span>
+            </div>
+            <button class="btn btn-secondary btn-full" id="btn-track-export" style="display:none;margin-top:6px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export track GPX
+            </button>
+            <button class="btn btn-secondary btn-full" id="btn-track-export-kml" style="display:none;margin-top:4px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export track KML
+            </button>
+            <button class="btn btn-secondary btn-full" id="btn-track-profile" style="display:none;margin-top:4px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="3 17 8 12 13 15 19 7"/><line x1="3" y1="21" x2="21" y2="21"/></svg>
+              Elevation profile
+            </button>
+            <button class="btn btn-danger btn-full" id="btn-track-clear" style="display:none;margin-top:4px">Clear track</button>
+          </div>
+        </div>
+
+      </div><!-- /panel-draw -->
+
+      <!-- PANEL: BOOKMARKS -->
+      <div class="panel" id="panel-bookmarks">
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
+            Saved bookmarks
+          </div>
+          <div class="card-body" style="padding:8px">
+            <div id="bookmark-list">
+              <p class="bookmark-empty">No bookmarks saved</p>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn btn-secondary btn-full" id="btn-add-bookmark" style="font-size:11px;padding:7px 10px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Bookmark current view
+        </button>
+
+      </div><!-- /panel-bookmarks -->
+
+      <!-- PANEL: TILE CACHE -->
+      <div class="panel" id="panel-offline">
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+            Tile cache
+          </div>
+          <div class="card-body">
+            <p class="hint">Tiles viewed on the map are cached automatically (max 4 GB, oldest evicted first). To create an offline basemap: select a KML area, a max zoom level and a map, then tap the button — missing tiles are downloaded and the basemap is registered for offline use.</p>
+            <div class="field">
+              <label>Area extent (KML file)</label>
+              <label class="btn btn-secondary btn-full" style="cursor:pointer;font-size:11px;padding:8px 12px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                Select KML extent
+                <input type="file" id="offline-kml-input" accept=".kml,.kmz" style="display:none">
+              </label>
+              <span class="hint" id="offline-kml-name" style="font-size:10px;margin-top:2px"></span>
+            </div>
+            <div class="field">
+              <label>Max zoom level (1–18)</label>
+              <input type="number" id="offline-zoom" min="1" max="18" value="14">
+            </div>
+            <div class="field">
+              <label>Map</label>
+              <select id="offline-map-select"></select>
+            </div>
+            <div id="offline-tos-warn" class="offline-tos-warn" style="display:none">
+              &#9888; This service prohibits bulk tile download per its Terms of Service. Proceed only for personal/testing use.
+            </div>
+            <div id="offline-progress-section" style="display:none;margin-top:4px">
+              <div class="offline-progress-bg"><div class="offline-progress-fill" id="offline-progress-fill"></div></div>
+              <span class="hint" id="offline-progress-text" style="display:block;text-align:center;margin-top:3px"></span>
+            </div>
+            <button class="btn btn-primary btn-full" id="btn-offline-start">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              Convert cache to map
+            </button>
+            <button class="btn btn-danger btn-full" id="btn-offline-cancel" style="display:none">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div><!-- /panel-offline -->
+
+      <!-- PANEL: GUIDE -->
+      <div class="panel" id="panel-guide">
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Quick reference
+          </div>
+          <div class="card-body" style="gap:12px">
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2a8 8 0 0 1 8 8c0 5.25-8 14-8 14S4 15.25 4 10a8 8 0 0 1 8-8z"/></svg>Map navigation</h4>
+              <div class="guide-item"><span class="guide-key">Drag</span><span class="guide-desc">Pan the map</span></div>
+              <div class="guide-item"><span class="guide-key">Pinch</span><span class="guide-desc">Zoom in / out</span></div>
+              <div class="guide-item"><span class="guide-key">2-finger rotate</span><span class="guide-desc">Rotate map — tap compass to reset north</span></div>
+              <div class="guide-item"><span class="guide-key">Long press</span><span class="guide-desc">Context menu with all coordinate formats</span></div>
+            </div>
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Search</h4>
+              <div class="guide-item"><span class="guide-key">Top bar</span><span class="guide-desc">Type address — suggestions appear automatically; tap one or use arrow keys + Enter to fly there</span></div>
+              <div class="guide-item"><span class="guide-key">📍 btn ↗</span><span class="guide-desc">Go to coordinates (DD, DMS, MGRS, UTM) or convert formats</span></div>
+            </div>
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>Layers</h4>
+              <div class="guide-item"><span class="guide-key">Basemap</span><span class="guide-desc">Select background map from the list</span></div>
+              <div class="guide-item"><span class="guide-key">Add web map</span><span class="guide-desc">Add WMS, WFS, WMTS/XYZ or ArcGIS MapServer by URL. WMS overlay: single GetMap image per viewport (non-tiled), OL reprojects from server native CRS (EPSG:4258/4326/3857) to map CRS — ideal for raster overlays. WFS: vector features (polygons/points) fetched per viewport above the configured min zoom (default 15 — lower values risk huge downloads), rendered as GeoJSON — best for cadastral/topographic data. Tap "Get layers" to auto-detect layer names. Overlay layers are saved and restored on next launch with their opacity and visibility state.</span></div>
+              <div class="guide-item"><span class="guide-key">WFS filter</span><span class="guide-desc">Filter attribute and filter values fields let you show only matching features. Load the layer without filter first, tap a feature to see attribute names, then re-add with the filter set. Multiple values: comma-separated (e.g. A001,B002). Uses CQL_FILTER — supported by GeoServer-based services (most Italian WFS). If no features appear with filter active, check the attribute name and values.</span></div>
+              <div class="guide-item"><span class="guide-key">WFS selection</span><span class="guide-desc">When WFS layers are loaded a badge with "⊙ Select" appears. Tap it to activate click-to-select mode: if multiple WFS layers are loaded a picker appears to choose which layer to target — only features of that layer respond to tap-to-select, the others open normally. Once a layer is chosen, tap any feature to select/deselect it instantly (no popup). The badge shows the active layer name. Tap "⊙ Select" again to reset. The popup "☆ Select" button also works as an alternative. The count badge shows selections — tap ⬇ KML to export, ✕ to clear all.</span></div>
+              <div class="guide-item"><span class="guide-key">Load file</span><span class="guide-desc">Import KML, KMZ, GeoJSON, GPX — drag &amp; drop or tap. KML exported from WFS selection shows catasto attributes in the popup when tapped.</span></div>
+              <div class="guide-item"><span class="guide-key">Layer list</span><span class="guide-desc">Toggle visibility, adjust opacity, reorder by drag, export or delete. Double-tap the layer name to rename it.</span></div>
+              <div class="guide-item"><span class="guide-key">Hollow ∅</span><span class="guide-desc">Tap the ∅ button on any loaded file layer to switch it to hollow mode — only the border is drawn, fill is transparent. Tap again to restore. Works on KML, GeoJSON and GPX polygon layers. Hollow state is saved and restored on next launch.</span></div>
+              <div class="guide-item"><span class="guide-key">Edit KML ✏</span><span class="guide-desc">Tap the pencil icon on a KML layer to enter vertex edit mode — drag vertices to move them, double-tap a vertex to delete it. Save commits changes back to the layer and updates the stored KML. Cancel discards all edits.</span></div>
+            </div>
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>Drawing</h4>
+              <div class="guide-item"><span class="guide-key">Toolbar ↖</span><span class="guide-desc">Draw marker, polyline, polygon, rectangle, circle — top-left map toolbar</span></div>
+              <div class="guide-item"><span class="guide-key">Edit toolbar ↖</span><span class="guide-desc">Move and reshape existing shapes — drag vertices to reposition, double-tap a vertex to delete it. Save commits changes, Cancel discards them</span></div>
+              <div class="guide-item"><span class="guide-key">Tap shape</span><span class="guide-desc">Name it, add a description, change icon/color/opacity, export as KML, or delete. Name and description are auto-saved as you type — no need to confirm.</span></div>
+              <div class="guide-item"><span class="guide-key">Auto-save</span><span class="guide-desc">Drawings (including name, description, color, icon) are saved automatically after each change and restored on next open</span></div>
+              <div class="guide-item"><span class="guide-key">Export all</span><span class="guide-desc">Export all drawings as KML or GeoJSON (includes color, icon, type, opacity)</span></div>
+              <div class="guide-item"><span class="guide-key">Clear all</span><span class="guide-desc">Prompts confirmation before deleting all drawings</span></div>
+              <div class="guide-item"><span class="guide-key">Dissolve KML</span><span class="guide-desc">In the KML Tools section of the Draw panel — tap "Dissolve KML features" to open a layer picker. Select one or more loaded KML layers with checkboxes, then tap "Dissolve selected": all polygon features from the chosen layers are merged into a single geometry, internal boundaries removed. Holes and non-contiguous areas are preserved. Enter name and description, then save as a new KML layer. Requires turf.min.js in the app folder.</span></div>
+            </div>
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>GPS &amp; Track</h4>
+              <div class="guide-item"><span class="guide-key">GPS btn ↘</span><span class="guide-desc">Center map on position — tap marker for full coords + elevation</span></div>
+              <div class="guide-item"><span class="guide-key">Screen on</span><span class="guide-desc">Screen wake lock acquired automatically while GPS is active — screen stays on</span></div>
+              <div class="guide-item"><span class="guide-key">Draw › GPS</span><span class="guide-desc">Start/stop GPS track — export as GPX when done</span></div>
+              <div class="guide-item"><span class="guide-key">Status bar</span><span class="guide-desc">Shows LAT, LON, DM, UTM, MGRS, accuracy, speed (km/h), heading, elevation, zoom, CRS — scroll horizontally if items are cut off</span></div>
+              <div class="guide-item"><span class="guide-key">Elev profile</span><span class="guide-desc">After stopping a track with altitude data — shows chart of elevation vs distance</span></div>
+              <div class="guide-item"><span class="guide-key">✈ Flight mode</span><span class="guide-desc">When GPS altitude is &gt;200 m above terrain (AGL), the position icon switches to an airplane that rotates with heading, and a Flight panel appears (bottom-left) showing SPD, AGL, ALT and HDG — updates live, draggable, closeable</span></div>
+            </div>
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Measure</h4>
+              <div class="guide-item"><span class="guide-key">📏 btn ↗</span><span class="guide-desc">Click points to measure distance — tooltip shows bearing In/Out for each segment</span></div>
+            </div>
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3,11 22,2 13,21 11,13 3,11"/></svg>Navigation</h4>
+              <div class="guide-item"><span class="guide-key">Arrow btn ↘</span><span class="guide-desc">Set destination by address or map tap — choose car/walk/bike — OSRM routing</span></div>
+              <div class="guide-item"><span class="guide-key">Map bearing</span><span class="guide-desc">While navigation is active the map rotates to follow your direction of travel (GPS heading). Flight mode is excluded. Use the compass to reset north manually.</span></div>
+              <div class="guide-item"><span class="guide-key">Off-route</span><span class="guide-desc">Auto-recalculates route if you deviate &gt;50 m</span></div>
+              <div class="guide-item"><span class="guide-key">Reset</span><span class="guide-desc">Clear destination and route — ready for a new navigation</span></div>
+              <div class="guide-item"><span class="guide-key">Drag panel</span><span class="guide-desc">Hold the header to reposition the navigation panel anywhere on screen</span></div>
+            </div>
+
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="12,3 14,11 12,10 10,11" fill="currentColor"/></svg>Compass</h4>
+              <div class="guide-item"><span class="guide-key">Compass ↘</span><span class="guide-desc">Rotates with device heading — tap to reset map to north and re-center on GPS</span></div>
+            </div>
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>Bookmarks</h4>
+              <div class="guide-item"><span class="guide-key">Saved tab</span><span class="guide-desc">Tap item to fly there — add from current view or long-press on map</span></div>
+            </div>
+
+            <div class="guide-section">
+              <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Tile cache</h4>
+              <div class="guide-item"><span class="guide-key">Auto-cache</span><span class="guide-desc">Every tile you view is cached automatically — up to 4 GB, then oldest are replaced</span></div>
+              <div class="guide-item"><span class="guide-key">Cache tab</span><span class="guide-desc">Select KML extent + max zoom + map → tap "Convert cache to map": scans cache, downloads all missing tiles (zoom 1 to max), registers offline basemap</span></div>
+              <div class="guide-item"><span class="guide-key">Offline basemap</span><span class="guide-desc">Appears in basemap list — serves all zoom levels from cache, no internet needed</span></div>
+              <div class="guide-item"><span class="guide-key">Cancel</span><span class="guide-desc">Stops the download mid-way; tiles already fetched remain in cache</span></div>
+            </div>
+
+          </div>
+        </div>
+      </div><!-- /panel-guide -->
+
+    </aside>
+
+    <!-- FLOATING TOOLS PANEL -->
+    <div id="map-tools" class="hidden">
+      <div class="mt-header">
+        <span class="mt-grip" title="Drag">&#8942;&#8942;</span>
+        <button class="mt-tab active" data-mt="goto">Go to</button>
+        <button class="mt-tab" data-mt="convert">Convert</button>
+        <button class="mt-close" id="map-tools-close">&#10005;</button>
+      </div>
+      <div class="mt-panel active" id="mt-goto">
+        <div class="field" style="position:relative">
+          <label>Coordinate or address</label>
+          <input type="text" id="goto-input" placeholder="lat,lon — MGRS — UTM — or address">
+        </div>
+        <button class="btn btn-primary btn-full" id="btn-goto">Go</button>
+      </div>
+      <div class="mt-panel" id="mt-convert">
+        <div class="field">
+          <label>Input format</label>
+          <select id="convert-from">
+            <option value="dd">Decimal (DD)</option>
+            <option value="dms">Degrees Min Sec (DMS)</option>
+            <option value="mgrs">MGRS &#8212; 32TPP1234512345</option>
+            <option value="utm">UTM &#8212; 32T 390000 4990000</option>
+          </select>
+        </div>
+        <div class="field">
+          <input type="text" id="convert-input" placeholder="Enter coordinate&#8230;">
+        </div>
+        <button class="btn btn-primary btn-full" id="btn-convert">Convert</button>
+        <div class="result-box" id="convert-result"></div>
+      </div>
+    </div>
+
+    <!-- MAP (Leaflet basemap + draw) + OL overlay (WMS reprojection) -->
+    <div id="map">
+      <div id="ol-map"></div>
+    </div>
+
+    <!-- NAVIGATION PANEL -->
+    <div id="nav-panel" class="hidden">
+      <div class="mt-header nav-drag-header">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:10px;flex-shrink:0;color:var(--accent)"><polygon points="3,11 22,2 13,21 11,13 3,11"/></svg>
+        <span style="flex:1;padding:9px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">Navigate</span>
+        <button class="mt-close" id="nav-close">&#8722;</button>
+      </div>
+      <div style="padding:10px;display:flex;flex-direction:column;gap:8px">
+        <div class="field">
+          <label>Destination</label>
+          <div style="display:flex;gap:4px;position:relative">
+            <input type="text" id="nav-dest-input" placeholder="Address or pick on map&#8230;" autocomplete="off" autocorrect="off" spellcheck="false" style="flex:1;min-width:0">
+            <button class="btn btn-secondary" id="nav-pick-btn" title="Pick on map" style="padding:6px 10px;flex-shrink:0">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a8 8 0 0 1 8 8c0 5.25-8 14-8 14S4 15.25 4 10a8 8 0 0 1 8-8z"/><circle cx="12" cy="10" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn nav-profile-btn active" data-profile="driving" title="Car" style="flex:1;padding:8px">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 17h2v-4a2 2 0 0 0-.59-1.41L17 8H7L3.59 11.59A2 2 0 0 0 3 13v4h2"/>
+              <circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/>
+              <path d="M5 13h14"/>
+            </svg>
+          </button>
+          <button class="btn nav-profile-btn" data-profile="walking" title="Walking" style="flex:1;padding:8px">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="13" cy="3.5" r="1.5" fill="currentColor" stroke="none"/>
+              <line x1="13" y1="5" x2="11" y2="11"/>
+              <line x1="11" y1="8" x2="8.5" y2="6.5"/>
+              <line x1="11" y1="8" x2="14" y2="9.5"/>
+              <line x1="11" y1="11" x2="9" y2="17"/>
+              <line x1="11" y1="11" x2="13.5" y2="16"/>
+              <line x1="9" y1="17" x2="7" y2="18"/>
+              <line x1="13.5" y1="16" x2="15.5" y2="17"/>
+            </svg>
+          </button>
+          <button class="btn nav-profile-btn" data-profile="cycling" title="Cycling" style="flex:1;padding:8px">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="5.5" cy="17" r="3.5"/>
+              <circle cx="18.5" cy="17" r="3.5"/>
+              <path d="M5.5 17L12 13L18.5 17"/>
+              <path d="M12 13L14 9L18.5 13"/>
+              <line x1="12" y1="8" x2="16" y2="8"/>
+              <circle cx="12" cy="13" r="1.5" fill="currentColor" stroke="none"/>
+            </svg>
+          </button>
+        </div>
+        <button class="btn btn-primary btn-full" id="nav-start-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5,3 19,12 5,21"/></svg>
+          Start navigation
+        </button>
+        <button class="btn btn-danger btn-full" id="nav-stop-btn" style="display:none">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+          Stop navigation
+        </button>
+        <button class="btn btn-secondary btn-full" id="nav-reset-btn" style="font-size:11px;padding:7px 8px" title="Reset navigation">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          Reset navigation
+        </button>
+        <p class="hint" id="nav-status" style="margin:0;min-height:14px"></p>
+      </div>
+    </div>
+
+    <!-- SELECTION BADGE -->
+    <div id="sel-badge" class="hidden">
+      <button id="sel-mode-btn" title="Click-to-select mode">&#x25CE; Select</button>
+      <span id="sel-badge-count" style="display:none"></span>
+      <button id="sel-badge-export" style="display:none">&#11015; KML</button>
+      <button id="sel-badge-close" style="display:none">&#10005;</button>
+    </div>
+
+    <!-- KML EDIT BAR -->
+    <div id="kml-edit-bar" class="hidden">
+      <div id="kml-edit-main">
+        <span id="kml-edit-label">Editing KML vertices</span>
+        <button id="kml-edit-save">&#10003; Save</button>
+        <button id="kml-edit-cancel">&#10005; Cancel</button>
+      </div>
+      <div id="kml-edit-hint">drag to move &middot; dbl-tap to delete &middot; drag midpoint to add</div>
+    </div>
+
+    <!-- DISSOLVE NAME/DESC MODAL -->
+    <div id="dissolve-modal" class="hidden">
+      <div id="dissolve-modal-inner">
+        <div class="modal-title">Dissolved feature</div>
+        <input id="dissolve-name-input" type="text" class="draw-desc-input" placeholder="Name (required)" style="margin-bottom:8px">
+        <input id="dissolve-desc-input" type="text" class="draw-desc-input" placeholder="Description (optional)">
+        <div class="modal-actions">
+          <button id="dissolve-modal-cancel" class="btn btn-secondary">Cancel</button>
+          <button id="dissolve-modal-ok" class="btn btn-success">&#10003; Save KML</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- FLIGHT PANEL -->
+    <div id="flight-panel" class="hidden">
+      <div class="mt-header flight-drag-header">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="margin-left:10px;flex-shrink:0;color:var(--accent)"><path d="M21 16v-2l-8-5V3.5C13 2.67 12.33 2 11.5 2S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>
+        <span style="flex:1;padding:9px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">Flight</span>
+        <button class="mt-close" id="flight-collapse">&#8722;</button>
+      </div>
+      <div class="flight-grid">
+        <div class="flight-block">
+          <div class="flight-label">SPD</div>
+          <div class="flight-val" id="fp-spd">--</div>
+          <div class="flight-unit">km/h</div>
+        </div>
+        <div class="flight-block">
+          <div class="flight-label">AGL</div>
+          <div class="flight-val" id="fp-agl">--</div>
+          <div class="flight-unit">m</div>
+        </div>
+        <div class="flight-block">
+          <div class="flight-label">ALT</div>
+          <div class="flight-val" id="fp-alt">--</div>
+          <div class="flight-unit">m WGS84</div>
+        </div>
+        <div class="flight-block">
+          <div class="flight-label">HDG</div>
+          <div class="flight-val" id="fp-hdg">--</div>
+          <div class="flight-unit">deg</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NAV FOLLOW BADGE -->
+    <div id="nav-follow-badge" class="hidden">
+      <button id="nav-follow-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
+        Recenter
+      </button>
+    </div>
+
+    <!-- NAV HUD -->
+    <div id="nav-hud" class="hidden">
+      <div class="mt-header nav-hud-drag-header">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:10px;flex-shrink:0;color:var(--accent)"><polygon points="3,11 22,2 13,21 11,13 3,11"/></svg>
+        <span style="flex:1;padding:9px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">Navigation</span>
+      </div>
+      <div class="nav-hud-grid">
+        <div class="flight-block">
+          <div class="flight-label">SPD</div>
+          <div class="flight-val" id="nh-spd">--</div>
+          <div class="flight-unit">km/h</div>
+        </div>
+        <div class="flight-block">
+          <div class="flight-label">DST</div>
+          <div class="flight-val" id="nh-dst">--</div>
+          <div class="flight-unit" id="nh-dst-unit">km</div>
+        </div>
+        <div class="flight-block">
+          <div class="flight-label">ETA</div>
+          <div class="flight-val" id="nh-eta">--</div>
+          <div class="flight-unit">min</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+
+  <!-- STATUS BAR -->
+  <div id="statusbar">
+    <button class="sb-arrow faded" id="sb-prev">&#8249;</button>
+    <div id="sb-scroll">
+      <div class="s-item"><span class="s-label">LAT</span><span class="s-val" id="sb-lat">--</span></div>
+      <div class="s-item"><span class="s-label">LON</span><span class="s-val" id="sb-lon">--</span></div>
+      <div class="s-item"><span class="s-label">DM</span><span class="s-val" id="sb-dm">--</span></div>
+      <div class="s-item"><span class="s-label">UTM</span><span class="s-val" id="sb-utm">--</span></div>
+      <div class="s-item"><span class="s-label">MGRS</span><span class="s-val" id="sb-mgrs">--</span></div>
+      <div class="s-item" id="sb-acc-item" style="display:none"><span class="s-label">ACC</span><span class="s-val" id="sb-acc">--</span></div>
+      <div class="s-item" id="sb-brg-item" style="display:none"><span class="s-label">HDG</span><span class="s-val" id="sb-brg">--</span></div>
+      <div class="s-item" id="sb-spd-item" style="display:none"><span class="s-label">SPD</span><span class="s-val" id="sb-spd">--</span></div>
+      <div class="s-item" id="sb-elev-item" style="display:none"><span class="s-label">ELEV</span><span class="s-val" id="sb-elev">--</span></div>
+      <div class="s-item"><span class="s-label">ZOOM</span><span class="s-val" id="zoom-level">6</span></div>
+      <div class="s-item"><span class="s-label">CRS</span><span class="s-val">WGS84</span></div>
+    </div>
+    <button class="sb-arrow" id="sb-next">&#8250;</button>
+  </div>
+
+</div><!-- /app -->
+
+<!-- ArcGIS credential modal -->
+<div id="modal-cred" class="modal-backdrop" style="display:none">
+  <div class="modal-box">
+    <h3>&#x1F512; Authentication required</h3>
+    <p class="modal-desc">This service requires ArcGIS Online authentication.<br>Credentials are <strong>not stored</strong>.</p>
+    <p id="cred-service" class="modal-service"></p>
+    <div class="field">
+      <label>ArcGIS Username</label>
+      <input type="text" id="cred-user" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="username">
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="cred-pass" autocomplete="new-password" placeholder="&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;">
+    </div>
+    <p id="cred-error" class="hint" style="color:var(--danger);display:none"></p>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" id="cred-cancel">Cancel</button>
+      <button class="btn btn-primary"   id="cred-ok">Sign in</button>
+    </div>
+  </div>
+</div>
+
+<!-- About modal -->
+<div id="modal-about" class="modal-backdrop" style="display:none">
+  <div class="modal-box">
+    <div class="modal-about-header">
+      <svg viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="ab-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#0d1b3e"/><stop offset="100%" stop-color="#0a2a4a"/>
+          </linearGradient>
+          <clipPath id="ab-clip"><circle cx="48" cy="62" r="28"/></clipPath>
+        </defs>
+        <rect width="96" height="96" rx="20" fill="url(#ab-bg)"/>
+        <circle cx="48" cy="62" r="28" fill="#0e2448"/>
+        <g clip-path="url(#ab-clip)" fill="none" stroke="#5dade2" stroke-width="0.8" opacity="0.5">
+          <line x1="48" y1="34" x2="48" y2="90"/><ellipse cx="48" cy="62" rx="14" ry="28"/>
+          <line x1="20" y1="62" x2="76" y2="62"/>
+        </g>
+        <circle cx="48" cy="62" r="28" fill="none" stroke="#5dade2" stroke-width="1.5"/>
+        <circle cx="48" cy="23" r="13" fill="none" stroke="#5dade2" stroke-width="0.8" opacity="0.4"/>
+        <polygon points="48,10 51,23 48,21 45,23" fill="#ff4757"/>
+        <polygon points="48,36 45,23 48,25 51,23" fill="rgba(220,230,255,0.5)"/>
+        <circle cx="48" cy="23" r="2.8" fill="#5dade2"/><circle cx="48" cy="23" r="1.2" fill="#fff"/>
+        <text x="48" y="9.5" font-family="Arial Black,Arial,sans-serif" font-size="5.5" font-weight="900" fill="#ff4757" text-anchor="middle">N</text>
+      </svg>
+      <div>
+        <div class="modal-about-title">Navitron</div>
+        <div class="modal-about-sub">Proudly autopiloted by AI</div>
+      </div>
+    </div>
+    <div>
+      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">1.3.5</span></div>
+      <div class="about-row"><span class="lbl">Author</span><span class="val">Damiano Chiappa</span></div>
+      <div class="about-row"><span class="lbl">License</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — Open Source</a></span></div>
+      <div class="about-row"><span class="lbl">Engine</span><span class="val">Leaflet · Cordova · Android</span></div>
+    </div>
+    <p class="modal-desc">Offline-capable GIS app with MGRS/UTM/DD/DMS coordinate display, drawing, GPS tracking, navigation and tile download.</p>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" id="about-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Elevation profile modal -->
+<div id="modal-elev" class="modal-backdrop" style="display:none">
+  <div class="modal-box">
+    <h3>Elevation profile</h3>
+    <div id="elev-chart-wrap"></div>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" id="elev-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- ===== SCRIPTS ===== -->
+<!-- Cordova: must be first -->
+<script src="cordova.js"></script>
+<!-- Leaflet core -->
+<script src="lib/leaflet.js"></script>
+<!-- Leaflet Rotate (map rotation + two-finger gesture) -->
+<script src="lib/leaflet-rotate.js"></script>
+<!-- ESRI Leaflet -->
+<script src="lib/esri-leaflet.js"></script>
+<!-- JSZip (KMZ) -->
+<script src="lib/jszip.min.js"></script>
+<!-- L.KML -->
+<script src="lib/L.KML.js"></script>
+<!-- toGeoJSON -->
+<script src="lib/togeojson.js"></script>
+<!-- Leaflet File Layer -->
+<script src="lib/leaflet.filelayer.js"></script>
+<!-- Polyline Measure -->
+<script src="lib/Leaflet.PolylineMeasure.js"></script>
+<!-- tokml -->
+<script src="lib/tokml.js"></script>
+<!-- turf -->
+<script src="lib/turf.min.js"></script>
+<!-- UTM / MGRS -->
+<script src="lib/utm.js"></script>
+<script src="lib/utmref.js"></script>
+<script src="lib/mgrs.js"></script>
+<!-- Leaflet Draw -->
+<script src="lib/leaflet-draw/Leaflet.draw.js"></script>
+<script src="lib/leaflet-draw/Leaflet.Draw.Event.js"></script>
+<script src="lib/leaflet-draw/Toolbar.js"></script>
+<script src="lib/leaflet-draw/Tooltip.js"></script>
+<script src="lib/leaflet-draw/ext/GeometryUtil.js"></script>
+<script src="lib/leaflet-draw/ext/LatLngUtil.js"></script>
+<script src="lib/leaflet-draw/ext/LineUtil.Intersect.js"></script>
+<script src="lib/leaflet-draw/ext/Polygon.Intersect.js"></script>
+<script src="lib/leaflet-draw/ext/Polyline.Intersect.js"></script>
+<script src="lib/leaflet-draw/ext/TouchEvents.js"></script>
+<script src="lib/leaflet-draw/draw/DrawToolbar.js"></script>
+<script src="lib/leaflet-draw/draw/handler/Draw.Feature.js"></script>
+<script src="lib/leaflet-draw/draw/handler/Draw.SimpleShape.js"></script>
+<script src="lib/leaflet-draw/draw/handler/Draw.Polyline.js"></script>
+<script src="lib/leaflet-draw/draw/handler/Draw.Marker.js"></script>
+<script src="lib/leaflet-draw/draw/handler/Draw.Circle.js"></script>
+<script src="lib/leaflet-draw/draw/handler/Draw.CircleMarker.js"></script>
+<script src="lib/leaflet-draw/draw/handler/Draw.Polygon.js"></script>
+<script src="lib/leaflet-draw/draw/handler/Draw.Rectangle.js"></script>
+<script src="lib/leaflet-draw/edit/EditToolbar.js"></script>
+<script src="lib/leaflet-draw/edit/handler/EditToolbar.Edit.js"></script>
+<script src="lib/leaflet-draw/edit/handler/EditToolbar.Delete.js"></script>
+<script src="lib/leaflet-draw/Control.Draw.js"></script>
+<script src="lib/leaflet-draw/edit/handler/Edit.Poly.js"></script>
+<script src="lib/leaflet-draw/edit/handler/Edit.SimpleShape.js"></script>
+<script src="lib/leaflet-draw/edit/handler/Edit.Rectangle.js"></script>
+<script src="lib/leaflet-draw/edit/handler/Edit.Marker.js"></script>
+<script src="lib/leaflet-draw/edit/handler/Edit.CircleMarker.js"></script>
+<script src="lib/leaflet-draw/edit/handler/Edit.Circle.js"></script>
+
+<!-- Service Worker -->
+<script>
+if ('serviceWorker' in navigator) {
+  const _hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (_hadController) location.reload(); });
+  window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => reg.update()).catch(() => {}); });
+}
+</script>
+
+<!-- proj4 + OpenLayers (WMS reprojection — must load before app scripts) -->
+<script src="lib/proj4.js"></script>
+<script src="lib/ol.js"></script>
+
+<!-- App scripts (load order matters) -->
+<script src="js/utils.js"></script>
+<script src="js/map.js"></script>
+<script src="js/basemaps-private.js" onerror="void(0)"></script>
+<script src="js/layers.js"></script>
+<script src="js/draw.js"></script>
+<script src="js/tools.js"></script>
+<script src="js/elevation.js"></script>
+<script src="js/navigation.js"></script>
+<script src="js/compass.js"></script>
+<script src="js/offline.js"></script>
+
+</body>
+</html>

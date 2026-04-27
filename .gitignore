@@ -1,0 +1,28 @@
+# Build artifacts
+output/
+*.apk
+*.aab
+*.idsig
+
+# Private basemap overrides (local tile provider URLs — not for distribution)
+app/js/basemaps-private.js
+
+# Cordova generated (recreated by build)
+platforms/
+plugins/cordova-plugin-advanced-http/
+plugins/cordova-plugin-geolocation/
+plugins/cordova-plugin-android-permissions/
+plugins/cordova-plugin-file/
+plugins/fetch.json
+plugins/android.json
+
+# Gradle / build cache
+.gradle/
+build/
+*.log
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+*.swp

@@ -1,0 +1,69 @@
+<?xml version='1.0' encoding='utf-8'?>
+<widget id="com.geotool.app" version="1.3.5"
+    xmlns="http://www.w3.org/ns/widgets"
+    xmlns:cdv="http://cordova.apache.org/ns/1.0"
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <name>Navitron</name>
+  <description>Advanced GIS Tool</description>
+  <author email="damiano.chiappa@gmail.com">Navitron</author>
+
+  <content src="geoapp.html" />
+
+  <hook type="after_prepare" src="hooks/after_prepare/fix_splash.js" />
+  <hook type="after_prepare" src="hooks/after_prepare/ssl_handler.js" />
+
+  <feature name="SslPlugin">
+    <param name="android-package" value="com.geotool.app.SslPlugin"/>
+    <param name="onload" value="true"/>
+  </feature>
+
+  <access origin="*" />
+  <allow-intent href="http://*/*" />
+  <allow-intent href="https://*/*" />
+  <allow-navigation href="*" />
+
+ <platform name="android">
+    <allow-intent href="market:*" />
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+
+    <!-- Icona default (fallback) -->
+    <icon src="www/images/icon-512.png" />
+    <!-- Icone per densità specifiche -->
+    <icon src="www/images/icon-192.png" density="mdpi" />
+    <icon src="www/images/icon-192.png" density="hdpi" />
+    <icon src="www/images/icon-192.png" density="xhdpi" />
+    <icon src="www/images/icon-512.png" density="xxhdpi" />
+    <icon src="www/images/icon-512.png" density="xxxhdpi" />
+
+<preference name="AndroidPersistentFileLocation" value="Compatibility" />
+
+    <edit-config file="app/src/main/AndroidManifest.xml" target="/manifest/application" mode="merge">
+      <application android:requestLegacyExternalStorage="true" android:usesCleartextTraffic="true" />
+    </edit-config>
+  </platform>
+
+  <preference name="SplashScreenDelay" value="0" />
+  <preference name="AutoHideSplashScreen" value="true" />
+  <preference name="DisallowOverscroll" value="true" />
+  <preference name="StatusBarBackgroundColor" value="#0f1117" />
+  <preference name="StatusBarStyle" value="lightcontent" />
+  <preference name="Orientation" value="user" />
+  <preference name="EnableViewportScale" value="false" />
+  <preference name="MixedContentAllowed" value="true" />
+  <preference name="GeoLocationEnabled" value="true" />
+  <preference name="AndroidInsecureFileModeEnabled" value="false" />
+  <preference name="scheme" value="https" />
+  <preference name="hostname" value="localhost" />
+  <preference name="CacheMode" value="LOAD_NO_CACHE" />
+
+</widget>

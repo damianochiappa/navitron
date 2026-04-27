@@ -1,0 +1,146 @@
+{
+  "v": 1,
+  "maps": [
+    {
+      "id": "custom_ws_1",
+      "type": "wmts",
+      "url": "https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png",
+      "name": "CartoDB Positron",
+      "layers": "",
+      "version": "1.1.1",
+      "protected": false
+    },
+    {
+      "id": "custom_ws_2",
+      "type": "wmts",
+      "url": "https://cartodb-basemaps-a.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png",
+      "name": "CartoDB Dark Matter",
+      "layers": "",
+      "version": "1.1.1",
+      "protected": false
+    },
+    {
+      "id": "custom_ws_3",
+      "type": "wmts",
+      "url": "https://cartodb-basemaps-a.global.ssl.fastly.net/rastertiles/voyager/{z}/{x}/{y}.png",
+      "name": "CartoDB Voyager",
+      "layers": "",
+      "version": "1.1.1",
+      "protected": false
+    },
+    {
+      "id": "custom_ws_5",
+      "type": "arcgis",
+      "url": "https://services.arcgisonline.com/arcgis/rest/services/World_Shaded_Relief/MapServer",
+      "name": "ESRI Shaded Relief",
+      "layers": "",
+      "version": "1.1.1",
+      "protected": false
+    },
+    {
+      "id": "custom_ws_6",
+      "type": "arcgis",
+      "url": "https://services.arcgisonline.com/arcgis/rest/services/World_Street_Map/MapServer",
+      "name": "ESRI Street Map",
+      "layers": "",
+      "version": "1.1.1",
+      "protected": false
+    },
+    {
+      "id": "custom_ws_7",
+      "type": "arcgis",
+      "url": "https://services.arcgisonline.com/arcgis/rest/services/Ocean/World_Ocean_Base/MapServer",
+      "name": "ESRI Ocean",
+      "layers": "",
+      "version": "1.1.1",
+      "protected": false
+    },
+    {
+      "id": "custom_ws_8",
+      "type": "arcgis",
+      "url": "https://services.arcgisonline.com/arcgis/rest/services/World_Terrain_Base/MapServer",
+      "name": "ESRI Terrain Base",
+      "layers": "",
+      "version": "1.1.1",
+      "protected": false
+    },
+    {
+      "id": "custom_ws_9",
+      "type": "arcgis",
+      "url": "https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Light_Gray_Base/MapServer",
+      "name": "ESRI Light Gray",
+      "layers": "",
+      "version": "1.1.1",
+      "protected": false
+    },
+    {
+      "id": "custom_ws_10",
+      "type": "arcgis",
+      "url": "https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer",
+      "name": "ESRI Dark Gray",
+      "layers": "",
+      "version": "1.1.1",
+      "protected": false
+    },
+    {
+      "id": "custom_ws_11",
+      "type": "arcgis",
+      "url": "https://services.arcgisonline.com/arcgis/rest/services/Elevation/World_Hillshade/MapServer",
+      "name": "ESRI Hillshade",
+      "layers": "",
+      "version": "1.1.1",
+      "protected": false
+    },
+    {
+      "id": "custom_ws_12",
+      "type": "wms",
+      "url": "https://wms.cartografia.agenziaentrate.gov.it/inspire/wms/ows01.php",
+      "name": "Labels Particelle",
+      "layers": "codice_plla",
+      "version": "1.3.0",
+      "crs": "EPSG:4258",
+      "protected": false,
+      "useAs": "overlay",
+      "opacity": 86,
+      "visible": false
+    },
+    {
+      "id": "custom_ws_14",
+      "type": "wfs",
+      "url": "https://wfs.cartografia.agenziaentrate.gov.it/inspire/wfs/owfs01.php",
+      "name": "Catasto Fogli",
+      "layers": "CP:CadastralZoning",
+      "version": "2.0.0",
+      "crs": "EPSG:6706",
+      "protected": false,
+      "minZoom": 14,
+      "useAs": "overlay",
+      "opacity": 80,
+      "color": "#0055ff",
+      "hollow": true,
+      "pane": "wfs-fogli",
+      "visible": false
+    },
+    {
+      "id": "custom_ws_13",
+      "type": "wfs",
+      "url": "https://wfs.cartografia.agenziaentrate.gov.it/inspire/wfs/owfs01.php",
+      "name": "Catasto Particelle",
+      "layers": "CP:CadastralParcel",
+      "version": "2.0.0",
+      "crs": "EPSG:6706",
+      "protected": false,
+      "minZoom": 14,
+      "useAs": "overlay",
+      "opacity": 80,
+      "color": "#22aa44",
+      "fillOpacity": 0.5,
+      "pane": "wfs-particelle",
+      "visible": false
+    }
+  ],
+  "sslExceptions": [
+    "wms.cartografia.agenziaentrate.gov.it",
+    "wfs.cartografia.agenziaentrate.gov.it"
+  ]
+}
