@@ -99,3 +99,10 @@ All other third-party libraries are MIT, BSD-2, or Apache-2.0 — see [NOTICES](
 | [proj4js](https://github.com/proj4js/proj4js) | MIT |
 | [toGeoJSON](https://github.com/mapbox/togeojson) | MIT |
 | [JSZip](https://stuk.github.io/jszip) | MIT/GPL |
+
+DEMO:
+
+
+https://github.com/user-attachments/assets/988fc7ab-d597-40d2-ace7-3db82d9f86b6
+
+
