@@ -792,9 +792,10 @@ const _WMSImageLayer = L.Layer.extend({
 });
 
 /* ===== OVERLAY SELECTION (WFS) ===== */
-const _selKeys   = new Set();   // stable feature keys — survive WFS reload
-const _selLayers = new Map();   // key → current screen layer (rebuilt after each render)
-const _selLabels = new Map();   // key → label string for cadastral tooltips
+const _selKeys    = new Set();   // stable feature keys — survive WFS reload
+const _selLayers  = new Map();   // key → current screen layer (rebuilt after each render)
+const _selLabels  = new Map();   // key → label string for cadastral tooltips
+const _selFeatures = new Map();  // key → GeoJSON captured at select-time (survives pan/zoom)
 const _SEL_STYLE = { color:'#ffcc00', fillColor:'#ffff00', fillOpacity:0.5, weight:2.5 };
 let _selMode   = false;         // click-to-select mode active
 let _selTarget = null;          // typeName of WFS layer currently targeted (null = any)
@@ -902,11 +903,13 @@ function _selToggle(key, layer, baseStyle, label) {
     _selKeys.delete(key);
     _selLayers.delete(key);
     _selLabels.delete(key);
+    _selFeatures.delete(key);
     try { layer.setStyle(baseStyle); } catch(_) {}
     try { layer.unbindTooltip(); } catch(_) {}
   } else {
     _selKeys.add(key);
     _selLayers.set(key, layer);
+    try { const gj = layer.toGeoJSON ? layer.toGeoJSON() : null; if (gj) _selFeatures.set(key, gj); } catch(_) {}
     try { layer.setStyle(_SEL_STYLE); } catch(_) {}
     if (label) {
       _selLabels.set(key, label);
@@ -928,6 +931,7 @@ function _selExit() {
   _selKeys.clear();
   _selLayers.clear();
   _selLabels.clear();
+  _selFeatures.clear();
   _selUpdateBadge();
 }
 
@@ -954,9 +958,7 @@ function _selUpdateBadge() {
 function _selExportKML() {
   if (!_selKeys.size) { toastMsg('Nothing selected', 'warn'); return; }
   const features = [];
-  _selLayers.forEach(l => {
-    try { const f = l.toGeoJSON ? l.toGeoJSON() : null; if (f) features.push(f); } catch(_) {}
-  });
+  _selFeatures.forEach(f => { if (f) features.push(f); });
   if (!features.length) { toastMsg('Cannot export selection', 'error'); return; }
   downloadFile(tokml({ type:'FeatureCollection', features }),
     'selection.kml', 'application/vnd.google-earth.kml+xml');
