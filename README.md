@@ -4,6 +4,8 @@ An offline-capable GIS web app packaged as an Android APK via Apache Cordova. Bu
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
+<video src="DEMO.mp4" controls width="100%"></video>
+
 ---
 
 ## Features
