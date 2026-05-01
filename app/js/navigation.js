@@ -93,7 +93,9 @@
       const _hud = document.getElementById('nav-hud');
       if (_hud) { _hud.classList.remove('hidden'); _hud.style.zIndex = ++window._panelZTop; }
       if (typeof window._navSetFollowing === 'function') window._navSetFollowing(true);
-      if (navRoute) map.fitBounds(navRoute.getBounds(), { padding: [40, 40] });
+      // Center on GPS, alza a zoom 17 se inferiore, altrimenti rispetta scelta utente
+      const _z = Math.max(map.getZoom(), 17);
+      map.setView(ll, _z, { animate: true });
     } catch (e) {
       _setStatus('Error: ' + e.message, 'var(--danger)');
     }
@@ -153,6 +155,7 @@
     _setStatus('Recalculating\u2026', 'var(--danger)');
     _fetchRoute(ll.lat, ll.lng, navDestLat, navDestLon)
       .then(route => {
+        if (!navActive) return;
         _drawRoute(route.geometry.coordinates);
         _navTotalDist     = route.distance;
         _navTotalDuration = route.duration;
@@ -160,7 +163,7 @@
         const min = Math.round(route.duration / 60);
         _setStatus(km + ' km — ~' + min + ' min', 'var(--success)');
       })
-      .catch(() => _setStatus('Recalc failed', 'var(--danger)'));
+      .catch(() => { if (navActive) _setStatus('Recalc failed', 'var(--danger)'); });
   };
 
   /* ===== LEAFLET CONTROL BUTTON ===== */

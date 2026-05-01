@@ -268,9 +268,19 @@ function _importConfig(cfg) {
           addLayerToList(layer, c.name, null, null, {
             opacity: c.opacity !== undefined ? c.opacity : 80,
             visible: c.visible !== false,
+            color:   c.color || undefined,
+            hollow:  c.hollow || false,
             onStateChange: ({ opacity, visible }) => {
               c.opacity = opacity;
               c.visible = visible;
+              _autoSaveConfig();
+            },
+            onColorChange: color => {
+              c.color = color;
+              _autoSaveConfig();
+            },
+            onHollowChange: hollow => {
+              c.hollow = hollow;
               _autoSaveConfig();
             },
             onDelete: () => {

@@ -85,6 +85,12 @@ function toastMsg(msg, type='', dur) {
   t._timer = setTimeout(() => t.className = '', dur);
 }
 
+function _xmlEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
 function showPromptModal(message, defaultValue, onConfirm) {
   let modal = document.getElementById('prompt-modal');
   if (!modal) {

@@ -26,22 +26,27 @@ function _collectBounds(layer) {
   return b;
 }
 
+// Fill ratio aligned with draw.js user shapes (fillOpacity = opacity * 0.3)
+const _NV_FILL_RATIO = 0.3;
+
 function setLayerOpacity(layer, pct) {
   if (!layer) return;
   if (layer._isOL) { layer.setOpacity(pct / 100); return; }
   const o = pct / 100;
   if (typeof layer.setOpacity === 'function') { try { layer.setOpacity(o); } catch(e) {} }
   if (typeof layer.setStyle === 'function') {
-    // Only change opacity; fillOpacity is a fixed design value (set on load or by hollow toggle)
-    try { layer.setStyle(layer._hollow ? { opacity: o, fillOpacity: 0 } : { opacity: o }); } catch(e) {}
+    const fo = layer._hollow ? 0 : o * _NV_FILL_RATIO;
+    try { layer.setStyle({ opacity: o, fillOpacity: fo }); } catch(e) {}
   }
   if (layer._icon) layer._icon.style.opacity = o;
   if (typeof layer.eachLayer === 'function') layer.eachLayer(c => setLayerOpacity(c, pct));
 }
 
+// Sets the hollow flag recursively. Style is applied by the next
+// setLayerOpacity call (which reads _hollow), so callers must invoke
+// setLayerOpacity afterwards to materialize the change.
 function _setLayerHollow(layer, hollow) {
   layer._hollow = hollow;
-  if (typeof layer.setStyle === 'function') { try { layer.setStyle({ fillOpacity: hollow ? 0 : 1.0 }); } catch(_) {} }
   if (typeof layer.eachLayer === 'function') layer.eachLayer(c => _setLayerHollow(c, hollow));
 }
 
@@ -65,6 +70,7 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
   const initColor   = opts.color || '#4f8ef7';
   const initHollow  = opts.hollow || false;
   if (initHollow) _setLayerHollow(layer, true);
+  // setLayerOpacity below will apply the correct stroke+fill based on _hollow
 
   const id = 'layer_' + (++layerCounter);
   loadedLayers[id] = layer;
@@ -109,8 +115,7 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
     const hollowBtn = item.querySelector('.layer-hollow');
     const nowHollow = !l._hollow;
     _setLayerHollow(l, nowHollow);
-    // Restore correct opacity for non-hollow state
-    if (!nowHollow) setLayerOpacity(l, parseInt(item.querySelector('.layer-opacity').value));
+    setLayerOpacity(l, parseInt(item.querySelector('.layer-opacity').value));
     hollowBtn.classList.toggle('active', nowHollow);
     if (opts.onHollowChange) opts.onHollowChange(nowHollow);
   });
@@ -143,7 +148,9 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
       const baseName = name.replace(/\.[^.]+$/, '');
       const ext = rawMime.includes('kml') ? '.kml' : rawMime.includes('json') ? '.geojson' : '.gpx';
       showPromptModal('File name (without extension):', baseName, fname => {
-        downloadFile(rawContent, (fname || baseName).trim() + ext, rawMime);
+        const stripRe = new RegExp('\\' + ext + '$', 'i');
+        const stem = ((fname || baseName).trim() || baseName).replace(stripRe, '');
+        downloadFile(rawContent, stem + ext, rawMime);
       });
     } else { toastMsg('Original content not available', 'error'); }
   });
@@ -275,12 +282,16 @@ function enhanceKMLSublayer(layer) {
     div.appendChild(info);
   }
 
-  const styleHdr = document.createElement('div');
-  styleHdr.style.cssText = 'font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px';
-  styleHdr.textContent = 'Style';
-  div.appendChild(styleHdr);
-
+  // Per-feature style controls were removed: color/weight/opacity for KML
+  // layers are managed from the sidebar layer-item (single source of truth,
+  // persisted to localStorage). Markers keep the icon picker because that's
+  // a per-feature attribute, not a layer-wide one.
   if (isMarker) {
+    const styleHdr = document.createElement('div');
+    styleHdr.style.cssText = 'font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px';
+    styleHdr.textContent = 'Icon';
+    div.appendChild(styleHdr);
+
     const pickerDiv = document.createElement('div');
     pickerDiv.className = 'icon-picker';
     let activeBtn = null;
@@ -298,24 +309,6 @@ function enhanceKMLSublayer(layer) {
       pickerDiv.appendChild(btn);
     });
     div.appendChild(pickerDiv);
-  } else {
-    const colorRow = document.createElement('div');
-    colorRow.className = 'draw-color-row';
-    const lbl = document.createElement('label'); lbl.textContent = 'Color:';
-    const colorIn = document.createElement('input'); colorIn.type = 'color'; colorIn.value = '#4f8ef7';
-    colorIn.addEventListener('input', () => {
-      if (typeof layer.setStyle === 'function') layer.setStyle({ color: colorIn.value, fillColor: colorIn.value, fillOpacity: 0.3 });
-    });
-    colorRow.appendChild(lbl); colorRow.appendChild(colorIn); div.appendChild(colorRow);
-
-    const wRow = document.createElement('div'); wRow.className = 'draw-color-row';
-    const wLbl = document.createElement('label'); wLbl.textContent = 'Weight:';
-    const wIn = document.createElement('input');
-    wIn.type = 'range'; wIn.min = 1; wIn.max = 8; wIn.value = 2; wIn.style.flex = '1';
-    wIn.addEventListener('input', () => {
-      if (typeof layer.setStyle === 'function') layer.setStyle({ weight: parseInt(wIn.value) });
-    });
-    wRow.appendChild(wLbl); wRow.appendChild(wIn); div.appendChild(wRow);
   }
 
   layer.bindPopup(div, { maxWidth: 280 });
@@ -583,39 +576,119 @@ function _patchVertexDelete(tempGroup) {
   tempGroup.eachLayer(l => _attachVertexDelete(l, tempGroup));
 }
 
-function _attachVertexDelete(layer, tempGroup) {
-  if (!layer.editing || !layer.editing._markers) return;
-  const markers = layer.editing._markers;
-  const nested = markers.length > 0 && Array.isArray(markers[0]);
+// Real vertex bigger than mid; sizes chosen so half-sums fit a typical
+// edge — when a segment is so short that the mid would overlap a red,
+// the mid is hidden (see _checkMidVisibility).
+const _NV_VX_REAL_SIZE = L.Browser.touch ? 24 : 12;
+const _NV_VX_MID_SIZE  = L.Browser.touch ? 16 : 10;
+const _NV_VX_REAL_ICON = new L.DivIcon({
+  iconSize: [_NV_VX_REAL_SIZE, _NV_VX_REAL_SIZE],
+  className: 'leaflet-div-icon leaflet-editing-icon nv-vx-real' +
+             (L.Browser.touch ? ' leaflet-touch-icon' : '')
+});
+const _NV_VX_MID_ICON = new L.DivIcon({
+  iconSize: [_NV_VX_MID_SIZE, _NV_VX_MID_SIZE],
+  className: 'leaflet-div-icon leaflet-editing-icon nv-vx-mid' +
+             (L.Browser.touch ? ' leaflet-touch-icon' : '')
+});
+// Min screen distance from mid center to either real-vertex center. Below
+// this the mid bounding-box would overlap a red, so we hide it.
+const _NV_VX_MIN_GAP = (_NV_VX_REAL_SIZE + _NV_VX_MID_SIZE) / 2;
 
-  function attach(m, ri, mi) {
-    if (!m || m._vdel) return;
-    m._vdel = true;
-    m.on('dblclick', e => {
-      L.DomEvent.stop(e);
-      const lls = layer.getLatLngs();
-      const isPolygon = layer instanceof L.Polygon;
-      const ring = isPolygon ? (lls[ri] || lls) : lls;
-      const minLen = isPolygon ? 3 : 2;
-      if (ring.length <= minLen) {
-        toastMsg(isPolygon ? 'Poligono: minimo 3 vertici' : 'Linea: minimo 2 vertici', 'warn');
-        return;
-      }
-      ring.splice(mi, 1);
-      layer.setLatLngs(lls);
-      layer.edited = true;
-      layer.editing.disable();
-      layer.editing.enable();
-      _attachVertexDelete(layer, tempGroup);
-    });
-  }
-
-  if (nested) {
-    markers.forEach((ring, ri) => ring.forEach((m, mi) => attach(m, ri, mi)));
-  } else {
-    markers.forEach((m, mi) => attach(m, 0, mi));
-  }
+function _styleRealVertex(m) {
+  if (!m) return;
+  m.options.zIndexOffset = 1000;
+  try { m.setIcon(_NV_VX_REAL_ICON); } catch(_) {}
+  if (typeof m.update === 'function') m.update();
 }
+
+function _checkMidVisibility(mid, m1, m2) {
+  if (!mid || !mid._icon) return;
+  const map = mid._map;
+  if (!map) return;
+  try {
+    const p1 = map.latLngToLayerPoint(m1.getLatLng());
+    const p2 = map.latLngToLayerPoint(m2.getLatLng());
+    const pm = map.latLngToLayerPoint(mid.getLatLng());
+    const tooClose = pm.distanceTo(p1) < _NV_VX_MIN_GAP || pm.distanceTo(p2) < _NV_VX_MIN_GAP;
+    mid._icon.style.visibility = tooClose ? 'hidden' : '';
+    mid._icon.style.pointerEvents = tooClose ? 'none' : '';
+  } catch(_) {}
+}
+
+function _attachVertexDelete(layer, tempGroup) {
+  if (!layer.editing) return;
+  // L.Edit.Poly holds one PolyVerticesEdit handler per ring (outer + holes
+  // for polygons, single for polylines). Real vertex markers live on each
+  // _verticesHandlers[i]._markers as a flat array.
+  const vhs = layer.editing._verticesHandlers;
+  if (!vhs || !vhs.length) return;
+  const isPolygon = layer instanceof L.Polygon;
+
+  vhs.forEach((vh, ringIdx) => {
+    const markers = vh._markers;
+    if (!markers) return;
+    markers.forEach((m, mi) => {
+      _styleRealVertex(m);
+      if (m._vdel) return;
+      m._vdel = true;
+      m.on('dblclick', e => {
+        L.DomEvent.stop(e);
+        const lls = layer.getLatLngs();
+        // For polygons getLatLngs() returns nested rings; for polylines flat
+        // (or nested for multi-polylines). Pick the ring matching ringIdx.
+        const ring = Array.isArray(lls[0]) ? (lls[ringIdx] || lls[0]) : lls;
+        const minLen = isPolygon ? 3 : 2;
+        if (ring.length <= minLen) {
+          toastMsg(isPolygon ? 'Poligono: minimo 3 vertici' : 'Linea: minimo 2 vertici', 'warn');
+          return;
+        }
+        ring.splice(mi, 1);
+        layer.setLatLngs(lls);
+        layer.edited = true;
+        layer.editing.disable();
+        layer.editing.enable();
+        _attachVertexDelete(layer, tempGroup);
+      });
+    });
+  });
+}
+
+/* Patch middle-vertex markers (cuspidi per aggiungere) so they look
+   visually distinct from real vertices and stay below them in z-order. */
+(function _patchMidVertexStyle() {
+  if (!L.Edit || !L.Edit.PolyVerticesEdit || L.Edit.PolyVerticesEdit.__nvMidPatched) return;
+  const proto = L.Edit.PolyVerticesEdit.prototype;
+  const orig = proto._createMiddleMarker;
+  proto._createMiddleMarker = function (m1, m2) {
+    const out = orig.call(this, m1, m2);
+    const mid = m1._middleRight;
+    if (mid) {
+      mid.options.zIndexOffset = 0;
+      try { mid.setIcon(_NV_VX_MID_ICON); } catch(_) {}
+      if (typeof mid.update === 'function') mid.update();
+      const map = this._poly && this._poly._map;
+      const check = () => _checkMidVisibility(mid, m1, m2);
+      if (mid._icon) check(); else mid.once('add', check);
+      if (map) {
+        map.on('zoomend', check);
+        mid.once('remove', () => map.off('zoomend', check));
+      }
+      mid.once('dragstart touchmove', () => {
+        if (map) map.off('zoomend', check);
+        if (mid._icon) {
+          mid._icon.style.visibility = '';
+          mid._icon.style.pointerEvents = '';
+        }
+        try { mid.setIcon(_NV_VX_REAL_ICON); } catch(_) {}
+        mid.options.zIndexOffset = 1000;
+        if (typeof mid.update === 'function') mid.update();
+      });
+    }
+    return out;
+  };
+  L.Edit.PolyVerticesEdit.__nvMidPatched = true;
+})();
 
 function _saveKmlEdit() {
   if (!_kmlEditActive) return;
@@ -814,7 +887,8 @@ function _proceedDissolve() {
           document.getElementById('dissolve-desc-input').value = '';
           modal.classList.remove('hidden');
           document.getElementById('dissolve-modal-ok').onclick = () => {
-            const name = (document.getElementById('dissolve-name-input').value || '').trim() || 'Dissolved';
+            const rawName = (document.getElementById('dissolve-name-input').value || '').trim() || 'Dissolved';
+            const name = rawName.replace(/\.kml$/i, '');
             const desc = (document.getElementById('dissolve-desc-input').value || '').trim();
             modal.classList.add('hidden');
             result.properties = { name, description: desc };

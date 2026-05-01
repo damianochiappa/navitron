@@ -167,12 +167,13 @@ function _openDrawPopup(layer, type) {
     json.properties = json.properties || {};
     json.properties.name        = nameInput.value.trim() || 'Placemark';
     json.properties.description = descInput.value;
+    _applySimpleStyle(json.properties, layer);
     layer._geoName = json.properties.name;
     layer._geoDesc = json.properties.description;
-    const kml  = tokml(json);
+    const kml  = tokml(json, { simplestyle: true });
     const safe = json.properties.name.replace(/[^\w\-]/g, '_');
-    const fname = (filenameInput.value.trim() || safe || 'shape') + '.kml';
-    downloadFile(kml, fname, 'application/vnd.google-earth.kml+xml');
+    const baseName = (filenameInput.value.trim() || safe || 'shape').replace(/\.kml$/i, '');
+    downloadFile(kml, baseName + '.kml', 'application/vnd.google-earth.kml+xml');
   });
   popup.appendChild(saveBtn);
 
@@ -218,6 +219,22 @@ function updateDrawStats(layer) {
   }
 }
 
+/* Inject simplestyle-spec props from layer style so tokml({simplestyle:true})
+   emits <LineStyle>/<PolyStyle>. Skips markers (no line/poly style applies). */
+function _applySimpleStyle(props, layer) {
+  if (!layer || layer instanceof L.Marker) return;
+  const color = layer._geoColor || '#4f8ef7';
+  const op    = layer._geoOpacity !== undefined ? layer._geoOpacity : 1;
+  props.stroke           = color;
+  props['stroke-opacity'] = op;
+  props['stroke-width']   = 2;
+  // Polygons / Circles → also fill (LineString → tokml will emit only LineStyle)
+  if (layer instanceof L.Polygon || layer instanceof L.Circle) {
+    props.fill           = color;
+    props['fill-opacity'] = op * 0.3;
+  }
+}
+
 function layerToGeoJSON(layer) {
   if (layer instanceof L.Circle) {
     const c = layer.getLatLng(), r = layer.getRadius(), n = 64, pts = [];
@@ -238,14 +255,16 @@ document.getElementById('btn-export-all-kml').addEventListener('click', () => {
   const layers = drawnItems.getLayers();
   if (!layers.length) { toastMsg('No shapes to export', 'error'); return; }
   showPromptModal('File name (no extension):', 'drawings', fname => {
-    fname = (fname || 'drawings').trim() || 'drawings';
+    const base = ((fname || 'drawings').trim() || 'drawings').replace(/\.kml$/i, '');
     const features = layers.map(l => {
       const f = layerToGeoJSON(l); f.properties = f.properties || {};
       if (l._geoName) f.properties.name = l._geoName;
       if (l._geoDesc) f.properties.description = l._geoDesc;
+      _applySimpleStyle(f.properties, l);
       return f;
     });
-    downloadFile(tokml({ type:'FeatureCollection', features }), fname + '.kml', 'application/vnd.google-earth.kml+xml');
+    downloadFile(tokml({ type:'FeatureCollection', features }, { simplestyle: true }),
+      base + '.kml', 'application/vnd.google-earth.kml+xml');
   });
 });
 
@@ -253,7 +272,7 @@ document.getElementById('btn-export-all-geojson').addEventListener('click', () =
   const layers = drawnItems.getLayers();
   if (!layers.length) { toastMsg('No shapes to export', 'error'); return; }
   showPromptModal('File name (no extension):', 'drawings', fname => {
-    fname = (fname || 'drawings').trim() || 'drawings';
+    fname = ((fname || 'drawings').trim() || 'drawings').replace(/\.geojson$/i, '').replace(/\.json$/i, '');
     const features = layers.map(l => {
       const f = layerToGeoJSON(l); f.properties = f.properties || {};
       if (l._geoName)  f.properties.name     = l._geoName;
@@ -394,9 +413,10 @@ function exportGPX() {
     (p.alt != null ? `<ele>${p.alt.toFixed(1)}</ele>` : '') +
     `<time>${new Date(p.time).toISOString()}</time></trkpt>`
   ).join('\n');
-  const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Navitron" xmlns="http://www.topografix.com/GPX/1/1">\n  <trk><name>GPS Track</name><trkseg>\n${pts}\n  </trkseg></trk>\n</gpx>`;
   showPromptModal('File name:', 'track', fname => {
-    downloadFile(gpx, ((fname || 'track').trim() || 'track') + '.gpx', 'application/gpx+xml');
+    const base = (((fname || 'track').trim() || 'track')).replace(/\.gpx$/i, '');
+    const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Navitron" xmlns="http://www.topografix.com/GPX/1/1">\n  <trk><name>${_xmlEsc(base)}</name><trkseg>\n${pts}\n  </trkseg></trk>\n</gpx>`;
+    downloadFile(gpx, base + '.gpx', 'application/gpx+xml');
   });
 }
 
@@ -414,6 +434,9 @@ document.getElementById('btn-track-toggle').addEventListener('click', () => {
     toastMsg('Track recording started', 'success');
   } else {
     btn.innerHTML = '\u25B6 Start track'; btn.style.background = '';
+    // Hide bearing statusbar item — it stays frozen on last value otherwise
+    const _brgItem = document.getElementById('sb-brg-item');
+    if (_brgItem) _brgItem.style.display = 'none';
     if (trackPoints.length) {
       document.getElementById('btn-track-export').style.display     = 'block';
       document.getElementById('btn-track-export-kml').style.display  = 'block';
@@ -422,6 +445,44 @@ document.getElementById('btn-track-toggle').addEventListener('click', () => {
       document.getElementById('btn-track-profile').style.display = hasAlt ? 'block' : 'none';
     }
     toastMsg('Track stopped \u2014 ' + trackPoints.length + ' points', 'success');
+    // Offer to save the recorded polyline as an editable shape (cancel = keep existing track preview)
+    if (trackPoints.length >= 2) {
+      // Snapshot points now — if the user re-starts recording while the prompt
+      // is open, we save the just-stopped session, not a moving target.
+      const _snap = trackPoints.slice();
+      showPromptModal('Save track as drawing? Enter name (cancel to skip):', '', name => {
+        const nm = (name || '').trim();
+        if (!nm) return;
+        const lls = _snap.map(p => [p.lat, p.lng]);
+        const color = '#e05252';
+        const layer = L.polyline(lls, { color, weight: 3, opacity: 0.85 });
+        layer._geoName    = nm;
+        layer._geoDesc    = '';
+        layer._geoIcon    = 'pos';
+        layer._geoColor   = color;
+        layer._geoOpacity = 0.85;
+        layer._geoType    = 'polyline';
+        layer.on('click', () => _openDrawPopup(layer, layer._geoType));
+        drawnItems.addLayer(layer);
+        _saveDraws();
+        updateDrawStats(layer);
+        // Only clear the live recording buffer if the user has NOT restarted
+        // recording while the prompt was open — otherwise we would wipe
+        // points belonging to a new session.
+        if (!trackActive) {
+          if (trackPolyline) { try { map.removeLayer(trackPolyline); } catch(_) {} trackPolyline = null; }
+          trackPoints = []; trackDistance = 0;
+          document.getElementById('track-pts').textContent  = '0';
+          document.getElementById('track-dist').textContent = '0 m';
+          document.getElementById('track-stats').style.display       = 'none';
+          document.getElementById('btn-track-export').style.display     = 'none';
+          document.getElementById('btn-track-export-kml').style.display  = 'none';
+          document.getElementById('btn-track-profile').style.display    = 'none';
+          document.getElementById('btn-track-clear').style.display      = 'none';
+        }
+        toastMsg('Track saved as shape: ' + nm, 'success');
+      });
+    }
   }
 });
 
@@ -430,9 +491,11 @@ function exportKML() {
   const coords = trackPoints.map(p =>
     p.lng.toFixed(6) + ',' + p.lat.toFixed(6) + (p.alt != null ? ',' + p.alt.toFixed(1) : ',0')
   ).join(' ');
-  const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n  <Document>\n    <name>GPS Track</name>\n    <Placemark>\n      <name>Track</name>\n      <LineString>\n        <tessellate>1</tessellate>\n        <altitudeMode>clampToGround</altitudeMode>\n        <coordinates>${coords}</coordinates>\n      </LineString>\n    </Placemark>\n  </Document>\n</kml>`;
   showPromptModal('File name:', 'track', fname => {
-    downloadFile(kml, ((fname || 'track').trim() || 'track') + '.kml', 'application/vnd.google-earth.kml+xml');
+    const base = (((fname || 'track').trim() || 'track')).replace(/\.kml$/i, '');
+    const nm = _xmlEsc(base);
+    const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n  <Document>\n    <name>${nm}</name>\n    <Placemark>\n      <name>${nm}</name>\n      <LineString>\n        <tessellate>1</tessellate>\n        <altitudeMode>clampToGround</altitudeMode>\n        <coordinates>${coords}</coordinates>\n      </LineString>\n    </Placemark>\n  </Document>\n</kml>`;
+    downloadFile(kml, base + '.kml', 'application/vnd.google-earth.kml+xml');
   });
 }
 
@@ -473,7 +536,11 @@ function _serializeLayer(l, order) {
 function _saveDraws() {
   const layers = drawnItems.getLayers();
   const fc = { type: 'FeatureCollection', features: layers.map((l, i) => _serializeLayer(l, i)) };
-  try { localStorage.setItem('navitron_draws', JSON.stringify(fc)); } catch (_) {}
+  try { localStorage.setItem('navitron_draws', JSON.stringify(fc)); }
+  catch (err) {
+    console.error('saveDraws failed:', err);
+    toastMsg('Drawings save failed: ' + (err.message || 'storage error'), 'error');
+  }
 }
 
 function _loadDraws() {
@@ -520,7 +587,10 @@ function _loadDraws() {
     });
     updateDrawStats();
     if (fc.features.length) toastMsg('Drawings restored (' + fc.features.length + ')', 'success');
-  } catch (_) {}
+  } catch (err) {
+    console.error('loadDraws failed:', err);
+    toastMsg('Drawings restore failed: ' + (err.message || 'corrupted data'), 'error');
+  }
 }
 
 /* ===== ELEVATION PROFILE ===== */

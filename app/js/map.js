@@ -63,7 +63,14 @@ map.on('dragstart', () => {
 document.getElementById('nav-follow-btn').addEventListener('click', () => {
   window._navFollowing = true;
   document.getElementById('nav-follow-badge').classList.add('hidden');
-  if (typeof gpsMarker !== 'undefined' && gpsMarker) map.panTo(gpsMarker.getLatLng(), { animate: true, duration: 0.3 });
+  if (typeof gpsMarker !== 'undefined' && gpsMarker) {
+    const _ll = gpsMarker.getLatLng();
+    if (typeof navIsActive === 'function' && navIsActive()) {
+      map.setView(_ll, Math.max(map.getZoom(), 17), { animate: true });
+    } else {
+      map.panTo(_ll, { animate: true, duration: 0.3 });
+    }
+  }
 });
 
 L.control.scale({ maxWidth: 200, metric: true, imperial: false, position: 'bottomleft' }).addTo(map);
@@ -282,10 +289,13 @@ function gpsUpdate(pos) {
     _setFp('fp-hdg', hdg != null && isFinite(hdg) ? Math.round(hdg) + dir : '--');
   }
 
+  // Pedestrian nav uses circleMarker + view cone (no arrow) — driving/cycling
+  // keep the rotated arrow. Walking gets directional info from the cone alone.
+  const _navProfMarker = typeof window.navGetProfile === 'function' ? window.navGetProfile() : 'driving';
   if (_isFlying) {
     gpsMarker = L.marker(ll, { icon: _makeAirplaneIcon(pos.coords.heading), zIndexOffset: 1000 })
       .addTo(map).bindPopup(gpsDiv, { maxWidth: 260 });
-  } else if (!_isFlying && typeof navIsActive === 'function' && navIsActive() && _smoothBearing != null) {
+  } else if (!_isFlying && typeof navIsActive === 'function' && navIsActive() && _smoothBearing != null && _navProfMarker !== 'walking') {
     gpsMarker = L.marker(ll, { icon: _makeNavArrowIcon(_smoothBearing), zIndexOffset: 1000 })
       .addTo(map).bindPopup(gpsDiv, { maxWidth: 260 });
   } else {
@@ -337,7 +347,7 @@ function gpsUpdate(pos) {
     const _ref = _lastBearingLL || _prevGpsLL;
     if (_ref) {
       const _d = ll.distanceTo(_ref);
-      if (_d >= 5) {
+      if (_d >= 2) {
         // Spherical bearing ref→current; accumulates across fixes so works at any speed
         const dLng = (ll.lng - _ref.lng) * Math.PI / 180;
         const lat1 = _ref.lat * Math.PI / 180;
@@ -361,7 +371,7 @@ function gpsUpdate(pos) {
         let diff = rawBrg - _smoothBearing;
         if (diff > 180) diff -= 360;
         if (diff < -180) diff += 360;
-        _smoothBearing = (_smoothBearing + 0.35 * diff + 360) % 360;
+        _smoothBearing = (_smoothBearing + 0.55 * diff + 360) % 360;
       }
       map.setBearing(_smoothBearing);
     }
@@ -960,9 +970,12 @@ function _selExportKML() {
   const features = [];
   _selFeatures.forEach(f => { if (f) features.push(f); });
   if (!features.length) { toastMsg('Cannot export selection', 'error'); return; }
-  downloadFile(tokml({ type:'FeatureCollection', features }),
-    'selection.kml', 'application/vnd.google-earth.kml+xml');
-  toastMsg('Selection exported', 'success');
+  showPromptModal('File name (no extension):', 'selection', fname => {
+    const base = ((fname || 'selection').trim() || 'selection').replace(/\.kml$/i, '');
+    downloadFile(tokml({ type:'FeatureCollection', features }),
+      base + '.kml', 'application/vnd.google-earth.kml+xml');
+    toastMsg('Selection exported', 'success');
+  });
 }
 
 /* ===== ONBOARDING ===== */
@@ -1764,6 +1777,14 @@ function _addBasemapUI(cfg) {
             onStateChange: ({ opacity, visible }) => {
               cfg.opacity = opacity;
               cfg.visible = visible;
+              if (typeof _autoSaveConfig === 'function') _autoSaveConfig();
+            },
+            onColorChange: color => {
+              cfg.color = color;
+              if (typeof _autoSaveConfig === 'function') _autoSaveConfig();
+            },
+            onHollowChange: hollow => {
+              cfg.hollow = hollow;
               if (typeof _autoSaveConfig === 'function') _autoSaveConfig();
             }
           });
