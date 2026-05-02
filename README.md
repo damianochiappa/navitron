@@ -28,7 +28,7 @@ An offline-capable GIS web app packaged as an Android APK via Apache Cordova. Bu
 
 - Android device (ARM64, Android 10+)
 - [Termux](https://github.com/termux/termux-app) + proot-distro (Ubuntu)
-- Node.js + Cordova 12 (installed in Termux)
+- Node.js + Cordova CLI 12 (installed in Termux) — uses `cordova-android` 13 platform
 - Android SDK 34 + Java 17 (installed in proot Ubuntu by the build script)
 
 ---
@@ -96,11 +96,16 @@ All other third-party libraries are MIT, BSD-2, or Apache-2.0 — see [NOTICES](
 | [OpenLayers](https://openlayers.org) | BSD-2-Clause |
 | [ESRI Leaflet](https://github.com/Esri/esri-leaflet) | Apache-2.0 |
 | [Leaflet.draw](https://github.com/Leaflet/Leaflet.draw) | MIT |
-| [Leaflet.PolylineMeasure](https://github.com/ppete2/Leaflet.PolylineMeasure) | MIT |
+| [Leaflet.PolylineMeasure](https://github.com/ppete2/Leaflet.PolylineMeasure) | BSD-2-Clause |
+| [Leaflet.FileLayer](https://github.com/makinacorpus/Leaflet.FileLayer) | MIT |
+| [L.KML](https://github.com/shramov/leaflet-plugins) | MIT |
 | [turf.js](https://turfjs.org) | MIT |
 | [proj4js](https://github.com/proj4js/proj4js) | MIT |
-| [toGeoJSON](https://github.com/mapbox/togeojson) | MIT |
-| [JSZip](https://stuk.github.io/jszip) | MIT/GPL |
+| [mgrs.js](https://github.com/proj4js/mgrs) | MIT |
+| [tokml](https://github.com/tmcw/tokml) | MIT |
+| [toGeoJSON](https://github.com/mapbox/togeojson) | BSD-2-Clause |
+| [JSZip](https://stuk.github.io/jszip) | MIT / GPL-3.0 (dual) |
+| utm.js / utmref.js (Johannes Rudolph) | not declared (MIT/LGPL fragments inline) |
 
 DEMO:
 

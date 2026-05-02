@@ -1002,6 +1002,24 @@ a.polyline-measure-controlOnBgColor:hover {
 }
 #kml-edit-save:hover   { color: var(--success); }
 #kml-edit-cancel:hover { color: var(--danger); }
+
+/* KML edit vertex markers — real vertices are big red discs (28px on touch),
+   midpoints are small yellow discs (16px on touch). Real markers also get
+   zIndexOffset 1000 in layers.js so they stack above mids on acute corners. */
+.leaflet-div-icon.nv-vx-real {
+  background: #ff3b30 !important;
+  border: 2px solid #ffffff !important;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px #000, 0 1px 4px rgba(0,0,0,.6);
+  opacity: 1 !important;
+}
+.leaflet-div-icon.nv-vx-mid {
+  background: #facc15 !important;
+  border: 1.5px solid #1f2937 !important;
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgba(0,0,0,.5);
+  opacity: 1 !important;
+}
 #kml-edit-save:active, #kml-edit-cancel:active { transform: scale(0.87); opacity: 0.65; }
 
 
@@ -1382,4 +1400,20 @@ a.polyline-measure-controlOnBgColor:hover {
   transform: scale(0.87);
   opacity: 0.65;
   transition: transform 70ms, opacity 70ms;
+}
+
+/* Landscape corto: evita sovrapposizione tra colonna controlli top-right e bottom-right */
+@media (orientation: landscape) and (max-height: 500px) {
+  .leaflet-control-container .leaflet-top.leaflet-right,
+  .leaflet-control-container .leaflet-bottom.leaflet-right {
+    max-height: 50vh;
+    overflow: hidden;
+  }
+  .leaflet-control-container .leaflet-bar > a,
+  .leaflet-control-gps,
+  .leaflet-control-compass,
+  .leaflet-control-nav {
+    margin-bottom: 2px !important;
+  }
+  .leaflet-control-attribution { font-size: 9px; padding: 1px 4px; }
 }

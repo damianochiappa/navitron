@@ -373,7 +373,9 @@ function gpsUpdate(pos) {
         if (diff < -180) diff += 360;
         _smoothBearing = (_smoothBearing + 0.55 * diff + 360) % 360;
       }
-      map.setBearing(_smoothBearing);
+      // leaflet-rotate setBearing applies CSS rotate(+theta) clockwise.
+      // Track-up (heading at top of screen) requires CCW rotation, so negate.
+      map.setBearing(-_smoothBearing);
     }
   } else {
     _smoothBearing = null;

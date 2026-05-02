@@ -532,7 +532,7 @@
               <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2a8 8 0 0 1 8 8c0 5.25-8 14-8 14S4 15.25 4 10a8 8 0 0 1 8-8z"/></svg>Map navigation</h4>
               <div class="guide-item"><span class="guide-key">Drag</span><span class="guide-desc">Pan the map</span></div>
               <div class="guide-item"><span class="guide-key">Pinch</span><span class="guide-desc">Zoom in / out</span></div>
-              <div class="guide-item"><span class="guide-key">2-finger rotate</span><span class="guide-desc">Rotate map — tap compass to reset north</span></div>
+              <div class="guide-item"><span class="guide-key">2-finger rotate</span><span class="guide-desc">Rotate map — tap compass to reset north and recenter on GPS</span></div>
               <div class="guide-item"><span class="guide-key">Long press</span><span class="guide-desc">Context menu with all coordinate formats</span></div>
             </div>
 
@@ -551,13 +551,13 @@
               <div class="guide-item"><span class="guide-key">Load file</span><span class="guide-desc">Import KML, KMZ, GeoJSON, GPX — drag &amp; drop or tap. KML exported from WFS selection shows catasto attributes in the popup when tapped.</span></div>
               <div class="guide-item"><span class="guide-key">Layer list</span><span class="guide-desc">Toggle visibility, adjust opacity, reorder by drag, export or delete. Double-tap the layer name to rename it.</span></div>
               <div class="guide-item"><span class="guide-key">Hollow ∅</span><span class="guide-desc">Tap the ∅ button on any loaded file layer to switch it to hollow mode — only the border is drawn, fill is transparent. Tap again to restore. Works on KML, GeoJSON and GPX polygon layers. Hollow state is saved and restored on next launch.</span></div>
-              <div class="guide-item"><span class="guide-key">Edit KML ✏</span><span class="guide-desc">Tap the pencil icon on a KML layer to enter vertex edit mode — drag vertices to move them, double-tap a vertex to delete it. Save commits changes back to the layer and updates the stored KML. Cancel discards all edits.</span></div>
+              <div class="guide-item"><span class="guide-key">Edit KML ✏</span><span class="guide-desc">Tap the pencil icon on a KML layer to enter vertex edit mode — drag vertices to move them, double-tap a vertex to delete it, drag a dashed midpoint marker to add a new vertex. Save commits changes back to the layer and updates the stored KML. Cancel discards all edits.</span></div>
             </div>
 
             <div class="guide-section">
               <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>Drawing</h4>
               <div class="guide-item"><span class="guide-key">Toolbar ↖</span><span class="guide-desc">Draw marker, polyline, polygon, rectangle, circle — top-left map toolbar</span></div>
-              <div class="guide-item"><span class="guide-key">Edit toolbar ↖</span><span class="guide-desc">Move and reshape existing shapes — drag vertices to reposition, double-tap a vertex to delete it. Save commits changes, Cancel discards them</span></div>
+              <div class="guide-item"><span class="guide-key">Edit toolbar ↖</span><span class="guide-desc">Move and reshape existing shapes — drag vertices to reposition, double-tap a vertex to delete it, drag a dashed midpoint marker to add a new vertex. Save commits changes, Cancel discards them</span></div>
               <div class="guide-item"><span class="guide-key">Tap shape</span><span class="guide-desc">Name it, add a description, change icon/color/opacity, export as KML, or delete. Name and description are auto-saved as you type — no need to confirm.</span></div>
               <div class="guide-item"><span class="guide-key">Auto-save</span><span class="guide-desc">Drawings (including name, description, color, icon) are saved automatically after each change and restored on next open</span></div>
               <div class="guide-item"><span class="guide-key">Export all</span><span class="guide-desc">Export all drawings as KML or GeoJSON (includes color, icon, type, opacity)</span></div>
@@ -569,7 +569,7 @@
               <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>GPS &amp; Track</h4>
               <div class="guide-item"><span class="guide-key">GPS btn ↘</span><span class="guide-desc">Center map on position — tap marker for full coords + elevation</span></div>
               <div class="guide-item"><span class="guide-key">Screen on</span><span class="guide-desc">Screen wake lock acquired automatically while GPS is active — screen stays on</span></div>
-              <div class="guide-item"><span class="guide-key">Draw › GPS</span><span class="guide-desc">Start/stop GPS track — export as GPX when done</span></div>
+              <div class="guide-item"><span class="guide-key">Draw › GPS</span><span class="guide-desc">Start/stop GPS track — when done, export as GPX or KML, and optionally save the track as a drawing (it will appear in the drawings list with the name you choose)</span></div>
               <div class="guide-item"><span class="guide-key">Status bar</span><span class="guide-desc">Shows LAT, LON, DM, UTM, MGRS, accuracy, speed (km/h), heading, elevation, zoom, CRS — scroll horizontally if items are cut off</span></div>
               <div class="guide-item"><span class="guide-key">Elev profile</span><span class="guide-desc">After stopping a track with altitude data — shows chart of elevation vs distance</span></div>
               <div class="guide-item"><span class="guide-key">✈ Flight mode</span><span class="guide-desc">When GPS altitude is &gt;200 m above terrain (AGL), the position icon switches to an airplane that rotates with heading, and a Flight panel appears (bottom-left) showing SPD, AGL, ALT and HDG — updates live, draggable, closeable</span></div>
@@ -583,7 +583,9 @@
             <div class="guide-section">
               <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3,11 22,2 13,21 11,13 3,11"/></svg>Navigation</h4>
               <div class="guide-item"><span class="guide-key">Arrow btn ↘</span><span class="guide-desc">Set destination by address or map tap — choose car/walk/bike — OSRM routing</span></div>
-              <div class="guide-item"><span class="guide-key">Map bearing</span><span class="guide-desc">While navigation is active the map rotates to follow your direction of travel (GPS heading). Flight mode is excluded. Use the compass to reset north manually.</span></div>
+              <div class="guide-item"><span class="guide-key">Map bearing</span><span class="guide-desc">While navigation is active the map rotates to follow your direction of travel (GPS heading when moving, device compass when stationary). Flight mode is excluded. Use the compass to reset north manually.</span></div>
+              <div class="guide-item"><span class="guide-key">View cone</span><span class="guide-desc">In walking mode a 70° / 45 m sector is drawn around the GPS marker, oriented along your heading — shows the field of view ahead</span></div>
+              <div class="guide-item"><span class="guide-key">Nav HUD</span><span class="guide-desc">A compact panel (bottom-left) shows live SPD, DST to destination and ETA while navigating. Draggable by its header, hides automatically when navigation ends</span></div>
               <div class="guide-item"><span class="guide-key">Off-route</span><span class="guide-desc">Auto-recalculates route if you deviate &gt;50 m</span></div>
               <div class="guide-item"><span class="guide-key">Reset</span><span class="guide-desc">Clear destination and route — ready for a new navigation</span></div>
               <div class="guide-item"><span class="guide-key">Drag panel</span><span class="guide-desc">Hold the header to reposition the navigation panel anywhere on screen</span></div>
@@ -886,7 +888,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">1.4.4</span></div>
+      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">1.4.6</span></div>
       <div class="about-row"><span class="lbl">Author</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">License</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — Open Source</a></span></div>
       <div class="about-row"><span class="lbl">Engine</span><span class="val">Leaflet · Cordova · Android</span></div>

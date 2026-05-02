@@ -16,7 +16,7 @@ Leaflet.draw
   https://github.com/Leaflet/Leaflet.draw
 
 Leaflet.PolylineMeasure
-  License: MIT
+  License: BSD-2-Clause
   https://github.com/ppete2/Leaflet.PolylineMeasure
 
 OpenLayers (ol.js)
@@ -55,6 +55,10 @@ tokml
   License: MIT
   https://github.com/tmcw/tokml
 
+turf.js
+  License: MIT
+  https://github.com/Turfjs/turf
+
 utm.js / utmref.js
   Author: Johannes Rudolph <johannes.rudolph@gmx.com>
   License: not explicitly declared; contains MIT/LGPL-licensed fragments (cited inline)
@@ -62,6 +66,8 @@ utm.js / utmref.js
 OSRM routing (runtime API, no local library)
   License: BSD-2-Clause (public server — project-osrm.org, routing.openstreetmap.de)
 
-Google Maps tiles (runtime, no local library)
-  Note: direct tile access (mt0/mt1.google.com) without Google Maps API
-  violates Google ToS — for personal use only, replace before public distribution.
+Default tile providers (public distribution)
+  - Satellite Hybrid layer ("google_hybrid" key): Stadia Maps "alidade_satellite" (BSD-2-Clause attribution)
+  - Street Map layer  ("google_maps"  key): CartoDB Voyager (free for non-commercial use, attribution required)
+  Note: the keys "google_*" are historical names; the public build does NOT use Google Maps tiles.
+  Users can override these via the optional, git-excluded app/js/basemaps-private.js file.
