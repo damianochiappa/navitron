@@ -4,7 +4,7 @@ An offline-capable GIS web app packaged as an Android APK via Apache Cordova. Bu
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-<video src="DEMO.mp4" controls width="100%"></video>
+https://github.com/user-attachments/assets/988fc7ab-d597-40d2-ace7-3db82d9f86b6
 
 ---
 
@@ -47,8 +47,7 @@ bash build_navitron.sh
 bash build_navitron_fast.sh
 ```
 
-> The build scripts contain device-specific paths and are not included in this repository.  
-> Adapt `APP_SRC` and `APK_OUTPUT_DIR` to your device's storage paths.
+> The build scripts are device-specific (paths to `APP_SRC` and `APK_OUTPUT_DIR`); any standard Cordova build workflow works just as well.
 
 The signed APK is written to `output/Navitron.apk`. Signing uses a local keystore generated at first build.
 
@@ -106,10 +105,4 @@ All other third-party libraries are MIT, BSD-2, or Apache-2.0 — see [NOTICES](
 | [toGeoJSON](https://github.com/mapbox/togeojson) | BSD-2-Clause |
 | [JSZip](https://stuk.github.io/jszip) | MIT / GPL-3.0 (dual) |
 | utm.js / utmref.js (Johannes Rudolph) | not declared (MIT/LGPL fragments inline) |
-
-DEMO:
-
-
-https://github.com/user-attachments/assets/988fc7ab-d597-40d2-ace7-3db82d9f86b6
-
 
