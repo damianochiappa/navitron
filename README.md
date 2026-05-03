@@ -4,7 +4,7 @@ An offline-capable GIS web app packaged as an Android APK via Apache Cordova. Bu
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-https://github.com/user-attachments/assets/988fc7ab-d597-40d2-ace7-3db82d9f86b6
+![Navitron demo](https://github.com/user-attachments/assets/b615fea0-fc5c-4655-8e4f-f18e5baec1f5)
 
 ---
 
