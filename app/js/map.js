@@ -1137,11 +1137,35 @@ const _WFSLayer = L.Layer.extend({
     };
     if (ver < 2.0) p.outputFormat = 'application/json';
     if (this.options.filterAttr && this.options.filterVals) {
-      const vals = this.options.filterVals.split(',')
-        .map(v => `'${v.trim().replace(/'/g, "''")}'`);
-      p.CQL_FILTER = vals.length > 1
-        ? `${this.options.filterAttr} IN (${vals.join(',')})`
-        : `${this.options.filterAttr} = ${vals[0]}`;
+      // OGC Filter Encoding XML — WFS standard, supported by deegree, GeoServer, MapServer, QGIS Server.
+      // BBOX is embedded inside the same <Filter> via <And>: the spec forbids BBOX param + FILTER together.
+      const is20   = ver >= 2.0;
+      const fns    = is20 ? 'fes' : 'ogc';
+      const fnsUri = is20 ? 'http://www.opengis.net/fes/2.0' : 'http://www.opengis.net/ogc';
+      const gmlNs  = is20 ? 'http://www.opengis.net/gml/3.2' : 'http://www.opengis.net/gml';
+      const propTag = is20 ? 'ValueReference' : 'PropertyName';
+      const xmlEsc = s => String(s).replace(/[<>&'"]/g,
+        c => ({'<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;'}[c]));
+      const vals = this.options.filterVals.split(',').map(v => v.trim()).filter(Boolean);
+      const attrEsc = xmlEsc(this.options.filterAttr);
+      const eqs = vals.map(v =>
+        `<${fns}:PropertyIsEqualTo><${fns}:${propTag}>${attrEsc}</${fns}:${propTag}>` +
+        `<${fns}:Literal>${xmlEsc(v)}</${fns}:Literal></${fns}:PropertyIsEqualTo>`
+      ).join('');
+      const attrPred = vals.length > 1 ? `<${fns}:Or>${eqs}</${fns}:Or>` : eqs;
+      const c1 = latFirst ? b.getSouth() : b.getWest();
+      const c2 = latFirst ? b.getWest()  : b.getSouth();
+      const c3 = latFirst ? b.getNorth() : b.getEast();
+      const c4 = latFirst ? b.getEast()  : b.getNorth();
+      const bboxXml =
+        `<${fns}:BBOX><gml:Envelope srsName="${xmlEsc(srsName)}">` +
+        `<gml:lowerCorner>${c1} ${c2}</gml:lowerCorner>` +
+        `<gml:upperCorner>${c3} ${c4}</gml:upperCorner>` +
+        `</gml:Envelope></${fns}:BBOX>`;
+      p.FILTER =
+        `<${fns}:Filter xmlns:${fns}="${fnsUri}" xmlns:gml="${gmlNs}">` +
+        `<${fns}:And>${bboxXml}${attrPred}</${fns}:And></${fns}:Filter>`;
+      delete p.BBOX;
     }
     const url = this._wfsUrl + '?' +
       Object.entries(p).map(([k,v]) => k + '=' + encodeURIComponent(v)).join('&');
@@ -1346,7 +1370,9 @@ const _WFSLayer = L.Layer.extend({
         const _d = new DOMParser().parseFromString(text, 'application/xml');
         const _root = _d.documentElement;
         const _exc = _d.querySelector('ExceptionText,exceptionText');
-        toastMsg('WFS: server returned <' + _root.localName + '>' + (_exc ? ': ' + _exc.textContent.substring(0,60) : ''), 'error');
+        const _hint = (this.options.filterAttr && this.options.filterVals)
+          ? ' — filter active: verify attribute name and WFS version' : '';
+        toastMsg('WFS: server returned <' + _root.localName + '>' + (_exc ? ': ' + _exc.textContent.substring(0,60) : '') + _hint, 'error');
       } catch(_) { toastMsg('WFS: invalid response', 'error'); }
     };
 
