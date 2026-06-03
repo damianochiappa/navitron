@@ -98,6 +98,7 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
     <input type="color" class="layer-color" value="${initColor}" title="Layer color">
     <button class="layer-hollow${initHollow ? ' active' : ''}" title="Hollow — no fill">\u2205</button>
     <button class="layer-zoom" title="Zoom to layer">\u29C6</button>
+    ${opts.isWfs ? '<button class="layer-filter" title="Edit WFS filter">\u25BD</button>' : ''}
     <button class="layer-exp"  title="Export file">\u2B07</button>
     ${opts.isKml ? '<button class="layer-edit" title="Edit KML vertices">\u270F</button>' : ''}
     <button class="layer-del"  title="Remove">\u2715</button>
@@ -212,6 +213,19 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
   if (opts.isKml) {
     item.querySelector('.layer-edit').addEventListener('click', () => {
       _startKmlEdit(loadedLayers[id], id, opts.storeId || '');
+    });
+  }
+
+  // WFS filter edit button
+  if (opts.isWfs) {
+    item.querySelector('.layer-filter').addEventListener('click', () => {
+      const l = loadedLayers[id];
+      const curAttr = (l && l.options) ? (l.options.filterAttr || '') : '';
+      const curVals = (l && l.options) ? (l.options.filterVals || '') : '';
+      showFilterEditModal(curAttr, curVals, (attr, vals) => {
+        if (l && typeof l.setFilter === 'function') l.setFilter(attr, vals);
+        if (opts.onFilterChange) opts.onFilterChange({ filterAttr: attr, filterVals: vals });
+      });
     });
   }
 

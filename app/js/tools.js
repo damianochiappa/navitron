@@ -270,6 +270,7 @@ function _importConfig(cfg) {
             visible: c.visible !== false,
             color:   c.color || undefined,
             hollow:  c.hollow || false,
+            isWfs:   c.type === 'wfs',
             onStateChange: ({ opacity, visible }) => {
               c.opacity = opacity;
               c.visible = visible;
@@ -281,6 +282,11 @@ function _importConfig(cfg) {
             },
             onHollowChange: hollow => {
               c.hollow = hollow;
+              _autoSaveConfig();
+            },
+            onFilterChange: ({ filterAttr, filterVals }) => {
+              if (filterAttr) c.filterAttr = filterAttr; else delete c.filterAttr;
+              if (filterVals) c.filterVals = filterVals; else delete c.filterVals;
               _autoSaveConfig();
             },
             onDelete: () => {

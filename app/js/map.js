@@ -823,6 +823,12 @@ function _wfsLayerRemoved(wfsLayer) {
   _wfsCount = Math.max(0, _wfsCount - 1);
   const idx = _wfsRegistry.findIndex(e => e.layer === wfsLayer);
   if (idx !== -1) _wfsRegistry.splice(idx, 1);
+  const removedPane = wfsLayer.options.pane;
+  if (removedPane && map) {
+    const baseZ = { 'wfs-particelle': 402, 'wfs-fogli': 404 };
+    const paneEl = map.getPane(removedPane);
+    if (paneEl) paneEl.style.zIndex = baseZ[removedPane] || 403;
+  }
   if (_selTarget === wfsLayer.options.typeName) _selModeOff();
   if (!_wfsCount && _selMode) _selModeOff();
   _selUpdateBadge();
@@ -831,13 +837,21 @@ function _wfsLayerRemoved(wfsLayer) {
 function _updateWfsPaneZOrder() {
   if (!map) return;
   const baseZ = { 'wfs-particelle': 402, 'wfs-fogli': 404 };
+  const targetEntry = _selMode ? _wfsRegistry.find(e => e.typeName === _selTarget) : null;
+  const targetUsesDefaultPane = !!(targetEntry && !targetEntry.layer.options.pane);
   _wfsRegistry.forEach(e => {
     const paneName = e.layer.options.pane;
     if (!paneName) return;
     const paneEl = map.getPane(paneName);
     if (!paneEl) return;
-    // Elevate the target pane above all others so its clicks always fire first
-    paneEl.style.zIndex = (_selMode && _selTarget === e.typeName) ? 410 : (baseZ[paneName] || 403);
+    // Target with its own pane → raise. Target in default overlayPane → push other WFS panes below 400 so target catches clicks.
+    if (_selMode && _selTarget === e.typeName) {
+      paneEl.style.zIndex = 410;
+    } else if (targetUsesDefaultPane) {
+      paneEl.style.zIndex = 395;
+    } else {
+      paneEl.style.zIndex = baseZ[paneName] || 403;
+    }
   });
 }
 
@@ -1084,6 +1098,7 @@ const _WFSLayer = L.Layer.extend({
 
   onRemove(map) {
     clearTimeout(this._timer);
+    this._reqId = (this._reqId || 0) + 1;  // invalidate any in-flight render so late responses don't re-add features
     map.off('moveend zoomend', this._schedule, this);
     if (this._geo) { try { map.removeLayer(this._geo); } catch(_) {} this._geo = null; }
     _wfsLayerRemoved(this);
@@ -1098,6 +1113,12 @@ const _WFSLayer = L.Layer.extend({
   setStyle(s) {
     Object.assign(this.options.style, s);
     if (this._geo) this._geo.setStyle(this.options.style);
+  },
+
+  setFilter(attr, vals) {
+    this.options.filterAttr = attr || '';
+    this.options.filterVals = vals || '';
+    if (this._map) this._update();
   },
 
   _schedule() { clearTimeout(this._timer); this._timer = setTimeout(() => this._update(), 400); },
@@ -1148,10 +1169,14 @@ const _WFSLayer = L.Layer.extend({
         c => ({'<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;'}[c]));
       const vals = this.options.filterVals.split(',').map(v => v.trim()).filter(Boolean);
       const attrEsc = xmlEsc(this.options.filterAttr);
-      const eqs = vals.map(v =>
-        `<${fns}:PropertyIsEqualTo><${fns}:${propTag}>${attrEsc}</${fns}:${propTag}>` +
-        `<${fns}:Literal>${xmlEsc(v)}</${fns}:Literal></${fns}:PropertyIsEqualTo>`
-      ).join('');
+      const _hasWild = v => /[*?]/.test(v);
+      const eqs = vals.map(v => {
+        const propXml = `<${fns}:${propTag}>${attrEsc}</${fns}:${propTag}>`;
+        const litXml  = `<${fns}:Literal>${xmlEsc(v)}</${fns}:Literal>`;
+        return _hasWild(v)
+          ? `<${fns}:PropertyIsLike wildCard="*" singleChar="?" escapeChar="\\">${propXml}${litXml}</${fns}:PropertyIsLike>`
+          : `<${fns}:PropertyIsEqualTo>${propXml}${litXml}</${fns}:PropertyIsEqualTo>`;
+      }).join('');
       const attrPred = vals.length > 1 ? `<${fns}:Or>${eqs}</${fns}:Or>` : eqs;
       const c1 = latFirst ? b.getSouth() : b.getWest();
       const c2 = latFirst ? b.getWest()  : b.getSouth();
@@ -1193,14 +1218,14 @@ const _WFSLayer = L.Layer.extend({
             const key = _selKey(f);
             layer._selBase = { ...self.options.style };
 
-            // Cadastral label for selected features — try all known field names, handle numeric values
             const _isCadastral = /CadastralParcel|CadastralZoning/.test(self.options.typeName);
             const _fp = f.properties || {};
-            const _labelRaw = _isCadastral
+            const _labelKeys = _isCadastral
               ? ['label','code','number','numero','NUMERO','codice','CODICE','LABEL','CODE','NUMBER']
-                  .map(k => (_fp[k] != null && _fp[k] !== '') ? String(_fp[k]) : '')
-                  .find(v => v !== '') || null
-              : null;
+              : ['label','LABEL','Label','name','NAME','Name'];
+            const _labelRaw = _labelKeys
+              .map(k => (_fp[k] != null && _fp[k] !== '') ? String(_fp[k]) : '')
+              .find(v => v !== '') || null;
 
             // Re-apply selection highlight and tooltip if this feature was previously selected
             if (_selKeys.has(key)) {
@@ -1802,6 +1827,7 @@ function _addBasemapUI(cfg) {
         toastMsg('WMS overlay added — pan/zoom to load image', 'success');
         if (typeof addLayerToList === 'function') {
           addLayerToList(layer, name, null, null, {
+            isWfs: cfg.type === 'wfs',
             onStateChange: ({ opacity, visible }) => {
               cfg.opacity = opacity;
               cfg.visible = visible;
@@ -1813,6 +1839,11 @@ function _addBasemapUI(cfg) {
             },
             onHollowChange: hollow => {
               cfg.hollow = hollow;
+              if (typeof _autoSaveConfig === 'function') _autoSaveConfig();
+            },
+            onFilterChange: ({ filterAttr, filterVals }) => {
+              if (filterAttr) cfg.filterAttr = filterAttr; else delete cfg.filterAttr;
+              if (filterVals) cfg.filterVals = filterVals; else delete cfg.filterVals;
               if (typeof _autoSaveConfig === 'function') _autoSaveConfig();
             }
           });

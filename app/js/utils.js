@@ -126,6 +126,54 @@ function showPromptModal(message, defaultValue, onConfirm) {
   setTimeout(() => { inp.focus(); inp.select(); }, 80);
 }
 
+/* Two-field modal for editing a WFS layer filter (attribute + values).
+   Empty both = clear filter. Only one of the two filled = invalid, blocked. */
+function showFilterEditModal(currentAttr, currentVals, onConfirm) {
+  let modal = document.getElementById('filter-edit-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'filter-edit-modal';
+    modal.className = 'modal-backdrop';
+    modal.innerHTML =
+      '<div class="modal-box">' +
+        '<p style="margin-bottom:12px;font-size:13px;line-height:1.5">Edit WFS filter</p>' +
+        '<div class="field"><label>Filter attribute</label>' +
+          '<input type="text" id="filter-edit-attr" placeholder="e.g. CODICE" autocomplete="off" autocorrect="off" spellcheck="false"></div>' +
+        '<div class="field"><label>Filter values</label>' +
+          '<input type="text" id="filter-edit-vals" placeholder="e.g. MIL* or A001,B002" autocomplete="off" autocorrect="off" spellcheck="false">' +
+          '<p class="hint" style="margin:3px 0 0">Use <code>*</code> and <code>?</code> wildcards (e.g. <code>MIL*</code>), or comma-separated exact values. Empty both = clear filter.</p></div>' +
+        '<div class="modal-btns">' +
+          '<button class="btn btn-secondary" id="filter-edit-cancel">Cancel</button>' +
+          '<button class="btn btn-primary" id="filter-edit-ok">Save</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(modal);
+    document.getElementById('filter-edit-cancel').addEventListener('click', () => { modal.style.display = 'none'; });
+    document.getElementById('filter-edit-ok').addEventListener('click', () => {
+      const a = document.getElementById('filter-edit-attr').value.trim();
+      const v = document.getElementById('filter-edit-vals').value.trim();
+      if ((a && !v) || (!a && v)) {
+        toastMsg('Fill both attribute name and values, or leave both empty', 'warn');
+        return;
+      }
+      modal.style.display = 'none';
+      if (modal._cb) modal._cb(a, v);
+    });
+    ['filter-edit-attr','filter-edit-vals'].forEach(elId => {
+      document.getElementById(elId).addEventListener('keydown', e => {
+        if (e.key === 'Enter') document.getElementById('filter-edit-ok').click();
+        if (e.key === 'Escape') modal.style.display = 'none';
+      });
+    });
+    modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
+  }
+  document.getElementById('filter-edit-attr').value = currentAttr || '';
+  document.getElementById('filter-edit-vals').value = currentVals || '';
+  modal._cb = onConfirm;
+  modal.style.display = 'flex';
+  setTimeout(() => { const a = document.getElementById('filter-edit-attr'); a.focus(); a.select(); }, 80);
+}
+
 function fallbackCopy(text) {
   const ta = document.createElement('textarea');
   ta.value = text;
