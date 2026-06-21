@@ -43,6 +43,14 @@ const map = L.map('map', {
   rotateControl: false
 });
 
+/* Track tile-loading state for the safe-mode flag in geoapp.html. */
+map.on('layeradd', e => {
+  if (e.layer && e.layer instanceof L.TileLayer) {
+    e.layer.on('tileloadstart', window._nvTileStart || (()=>{}));
+    e.layer.on('tileload tileerror', window._nvTileEnd || (()=>{}));
+  }
+});
+
 let currentBasemap = BASEMAPS.osm;
 currentBasemap.addTo(map);
 
@@ -682,6 +690,9 @@ map.on('contextmenu', e => {
 
 /* ===== BASEMAP SWITCHER ===== */
 let wsCounter = 0, currentBasemapId = 'osm';
+// WFS server traits learned from GetCapabilities, keyed by URL: { jsonSupported, version }.
+// Consumed at Add time so legacy servers (e.g. MapServer PCN: WFS 1.1.0, GML-only) skip outputFormat=json.
+const _wfsCapsByUrl = {};
 const customMapConfigs = [];
 
 /* Set SSL nocheck once at startup so WMS images load via native HTTP */
@@ -1058,6 +1069,35 @@ function _reorderMapPanes(map) {
   } catch(_) {}
 }
 
+/* Decode an XML byte buffer respecting the encoding declared in its prolog.
+   Default fetch/text decode is UTF-8: MapServer PCN serves ISO-8859-1 with no
+   Content-Type charset, so accented chars become U+FFFD and DOMParser fails.
+   Fallback to UTF-8 keeps behavior identical for catasto/deegree/GeoServer. */
+function _decodeXmlBuffer(buf) {
+  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  let start = 0;
+  if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) start = 3;
+  let head = '';
+  for (let i = start; i < Math.min(start + 200, bytes.length); i++) head += String.fromCharCode(bytes[i]);
+  const m = head.match(/encoding\s*=\s*["']([^"']+)["']/i);
+  const enc = (m ? m[1] : 'utf-8').toLowerCase();
+  try { return new TextDecoder(enc, { fatal:false }).decode(bytes); }
+  catch(_) { try { return new TextDecoder('utf-8', { fatal:false }).decode(bytes); } catch(_2) { return ''; } }
+}
+
+/* Split an OGC service URL into base + pre-existing non-OGC query params
+   (e.g. MapServer's mandatory ?map=/path/to/file.map). The reserved list
+   covers all params the OGC requests build below, so they can't be duplicated. */
+function _splitOgcUrl(url) {
+  const i = url.indexOf('?');
+  if (i < 0) return { base: url, pre: '' };
+  const reserved = /^(service|version|request|typenames?|bbox|srsname|filter|maxfeatures|count|outputformat|crs|srs|layers|styles|format|width|height|transparent)$/i;
+  const pre = url.slice(i + 1).split('&')
+    .filter(p => p && !reserved.test(p.split('=')[0]))
+    .join('&');
+  return { base: url.slice(0, i), pre };
+}
+
 /* WFS vector feature layer: fetches GeoJSON features per viewport from a
    Web Feature Service.  Only active at zoom >= minZoom (default 15) to avoid
    loading thousands of features at small scales.  Uses EPSG:4326 BBOX.
@@ -1065,10 +1105,13 @@ function _reorderMapPanes(map) {
 const _WFSLayer = L.Layer.extend({
   options: { typeName:'', version:'2.0.0', minZoom:15, opacity:0.8, crs:null,
              filterAttr:'', filterVals:'', color:null, hollow:false, fillOpacity:null, pane:null,
+             jsonSupported:true,
              style:{ color:'#e63946', weight:1.5, fillOpacity:0.15 }, attribution:'' },
 
   initialize(url, options) {
-    this._wfsUrl = url.split('?')[0];
+    const _sp = _splitOgcUrl(url);
+    this._wfsUrl = _sp.base;
+    this._wfsPre = _sp.pre;
     L.setOptions(this, options);
     this.options.style = Object.assign({}, this.options.style); // own copy
     if (this.options.color) { this.options.style.color = this.options.color; this.options.style.fillColor = this.options.color; }
@@ -1141,8 +1184,8 @@ const _WFSLayer = L.Layer.extend({
     const srsName = this.options.crs || (ver >= 2.0 ? 'urn:ogc:def:crs:EPSG::4326' : 'EPSG:4326');
     const geoUrn  = /^urn:ogc:def:crs:/.test(srsName);
     const geoEpsg = /^EPSG:(4326|4258|6706|4230)$/.test(srsName);
-    // WFS 2.0 + geographic CRS → lat/lon axis order (INSPIRE spec); WFS 1.x → traditional lon/lat
-    const latFirst = geoUrn || (ver >= 2.0 && geoEpsg);
+    // WFS ≥1.1.0 + geographic CRS → lat/lon axis order (CRS native order per spec); WFS 1.0 → lon/lat
+    const latFirst = geoUrn || (ver >= 1.1 && geoEpsg);
     const bbox = latFirst
       ? `${b.getSouth()},${b.getWest()},${b.getNorth()},${b.getEast()},${srsName}`
       : ver >= 1.1
@@ -1156,7 +1199,9 @@ const _WFSLayer = L.Layer.extend({
       SRSNAME: srsName,
       maxFeatures: 2000, count: 2000
     };
-    if (ver < 2.0) p.outputFormat = 'application/json';
+    // Request JSON only when the server advertised it (default true for back-compat with hand-typed URLs).
+    // For GML-only servers (e.g. MapServer PCN) omit the param so the server returns its default GML, parsed below.
+    if (ver < 2.0 && this.options.jsonSupported) p.outputFormat = 'application/json';
     if (this.options.filterAttr && this.options.filterVals) {
       // OGC Filter Encoding XML — WFS standard, supported by deegree, GeoServer, MapServer, QGIS Server.
       // BBOX is embedded inside the same <Filter> via <And>: the spec forbids BBOX param + FILTER together.
@@ -1193,6 +1238,7 @@ const _WFSLayer = L.Layer.extend({
       delete p.BBOX;
     }
     const url = this._wfsUrl + '?' +
+      (this._wfsPre ? this._wfsPre + '&' : '') +
       Object.entries(p).map(([k,v]) => k + '=' + encodeURIComponent(v)).join('&');
 
     const _render = geojson => {
@@ -1269,6 +1315,9 @@ const _WFSLayer = L.Layer.extend({
               selBtn.textContent = _selKeys.has(key) ? '✓ Deselect' : '☆ Select';
             });
             popupEl.appendChild(selBtn);
+            // Prevent popup interactions from leaking to the map (nav pick mode, selection toggle, scroll-zoom)
+            L.DomEvent.disableClickPropagation(popupEl);
+            L.DomEvent.disableScrollPropagation(popupEl);
             layer.bindPopup(popupEl, { maxWidth:500, className:'wfs-popup' });
           }
         }).addTo(map);
@@ -1286,7 +1335,7 @@ const _WFSLayer = L.Layer.extend({
       } catch(_) {}
     };
 
-    // Manual GML 3.2 / GML 2 DOM parser — handles non-standard namespaces (e.g. MapServer).
+    // Manual GML 3.2 / 3.1.1 / GML 2 DOM parser — handles non-standard namespaces (e.g. MapServer).
     // swapAxes=true for urn:ogc:def:crs:EPSG::4326 (server returns lat,lon → swap to lon,lat for GeoJSON).
     const _parseGmlManual = (text, swapAxes) => {
       try {
@@ -1328,17 +1377,30 @@ const _WFSLayer = L.Layer.extend({
           }
           if (ln === 'Polygon') { const r = parsePolygon(el); return r ? {type:'Polygon',coordinates:r} : null; }
           if (ln === 'MultiSurface' || ln === 'MultiPolygon') {
-            const ms = gnsAll(el,'surfaceMember').concat(gnsAll(el,'polygonMember'));
-            const cs = ms.map(m => {
-              const poly = m.getElementsByTagNameNS(G3,'Polygon')[0] || m.getElementsByTagNameNS(G2,'Polygon')[0] || m.firstElementChild;
-              return parsePolygon(poly);
-            }).filter(Boolean);
+            // Singular wrappers (GML 3.2): <surfaceMember><Polygon/></surfaceMember>
+            const polys = [];
+            for (const m of gnsAll(el,'surfaceMember').concat(gnsAll(el,'polygonMember'))) {
+              const p = m.getElementsByTagNameNS(G3,'Polygon')[0] || m.getElementsByTagNameNS(G2,'Polygon')[0] || m.firstElementChild;
+              if (p) polys.push(p);
+            }
+            // Plural containers (GML 3.1.1, e.g. MapServer): <surfaceMembers><Polygon/><Polygon/></surfaceMembers>
+            for (const c of gnsAll(el,'surfaceMembers').concat(gnsAll(el,'polygonMembers'))) {
+              polys.push(...gnsAll(c,'Polygon'));
+            }
+            const cs = polys.map(parsePolygon).filter(Boolean);
             return cs.length ? {type:'MultiPolygon',coordinates:cs} : null;
           }
           if (ln === 'LineString') { const c = parsePosList(el); return c ? {type:'LineString',coordinates:c} : null; }
           if (ln === 'MultiCurve' || ln === 'MultiLineString') {
-            const ms = gnsAll(el,'curveMember').concat(gnsAll(el,'lineStringMember'));
-            const cs = ms.map(m => parsePosList(m.firstElementChild)).filter(Boolean);
+            const lines = [];
+            for (const m of gnsAll(el,'curveMember').concat(gnsAll(el,'lineStringMember'))) {
+              const ls = m.getElementsByTagNameNS(G3,'LineString')[0] || m.getElementsByTagNameNS(G2,'LineString')[0] || m.firstElementChild;
+              if (ls) lines.push(ls);
+            }
+            for (const c of gnsAll(el,'curveMembers').concat(gnsAll(el,'lineStringMembers'))) {
+              lines.push(...gnsAll(c,'LineString'));
+            }
+            const cs = lines.map(parsePosList).filter(Boolean);
             return cs.length ? {type:'MultiLineString',coordinates:cs} : null;
           }
           return null;
@@ -1402,12 +1464,13 @@ const _WFSLayer = L.Layer.extend({
     };
 
     if (window.cordova && cordova.plugin && cordova.plugin.http) {
-      cordova.plugin.http.sendRequest(url, { method:'get', responseType:'text' },
-        res => _parse(res.data),
+      cordova.plugin.http.sendRequest(url, { method:'get', responseType:'arraybuffer' },
+        res => _parse(_decodeXmlBuffer(res.data)),
         () => { if (reqId === this._reqId) toastMsg('WFS request failed', 'error'); }
       );
     } else {
-      fetch(url).then(r => r.text()).then(_parse).catch(() => { if (reqId === this._reqId) toastMsg('WFS request failed', 'error'); });
+      fetch(url).then(r => r.arrayBuffer()).then(buf => _parse(_decodeXmlBuffer(buf)))
+        .catch(() => { if (reqId === this._reqId) toastMsg('WFS request failed', 'error'); });
     }
   }
 });
@@ -1421,7 +1484,7 @@ function _createLayer(cfg, token, isOverlay) {
   switch (cfg.type) {
     case 'wfs': {
       if (!cfg.layers) throw new Error('Type name required for WFS — use "Get layers"');
-      return new _WFSLayer(cfg.url.split('?')[0], {
+      return new _WFSLayer(cfg.url, {
         typeName: cfg.layers, version: cfg.version || '2.0.0',
         minZoom: cfg.minZoom !== undefined ? cfg.minZoom : 15,
         crs: cfg.crs || null,
@@ -1431,7 +1494,8 @@ function _createLayer(cfg, token, isOverlay) {
         color: cfg.color || null,
         hollow: cfg.hollow || false,
         fillOpacity: cfg.fillOpacity !== undefined ? cfg.fillOpacity : null,
-        pane: cfg.pane || null
+        pane: cfg.pane || null,
+        jsonSupported: cfg.jsonSupported !== false
       });
     }
     case 'wms': {
@@ -1619,8 +1683,8 @@ function _addBasemapUI(cfg) {
     }
 
     const hints = {
-      wms:    'Base endpoint only — e.g.<br><code style="font-size:10px;word-break:break-all">https://wms.cartografia.agenziaentrate.gov.it/inspire/wms/ows01.php</code><br>Paste GetCapabilities URL too — query string is stripped automatically.',
-      wfs:    'Base endpoint only — e.g.<br><code style="font-size:10px;word-break:break-all">https://wfs.cartografia.agenziaentrate.gov.it/inspire/wfs/owfs01.php</code><br>GetCapabilities populates layers and CRS automatically.',
+      wms:    'Base endpoint only — e.g.<br><code style="font-size:10px;word-break:break-all">https://wms.cartografia.agenziaentrate.gov.it/inspire/wms/ows01.php</code><br>Paste GetCapabilities URL too — OGC params are dropped, MapServer <code>?map=...</code> is kept.',
+      wfs:    'Base endpoint only — e.g.<br><code style="font-size:10px;word-break:break-all">https://wfs.cartografia.agenziaentrate.gov.it/inspire/wfs/owfs01.php</code><br>GetCapabilities populates layers, CRS and WFS version. Click <b>Get layers</b> before <b>Add</b> for legacy GML-only servers (e.g. PCN MapServer).',
       wmts:   'URL template with {z}/{x}/{y} &mdash; e.g. https://tile.openstreetmap.org/{z}/{x}/{y}.png',
       arcgis: 'URL up to .../MapServer &mdash; e.g. https://server/.../MapServer'
     };
@@ -1657,10 +1721,11 @@ function _addBasemapUI(cfg) {
     }
     const capsBtn = document.getElementById('btn-ws-caps');
     capsBtn.disabled = true; capsBtn.textContent = '…';
-    const baseUrl = url.split('?')[0];
+    const _sp = _splitOgcUrl(url);
+    const _prefix = _sp.pre ? _sp.pre + '&' : '';
     const capsUrl = type === 'wms'
-      ? baseUrl + '?SERVICE=WMS&REQUEST=GetCapabilities'
-      : baseUrl + '?SERVICE=WFS&REQUEST=GetCapabilities';
+      ? _sp.base + '?' + _prefix + 'SERVICE=WMS&REQUEST=GetCapabilities'
+      : _sp.base + '?' + _prefix + 'SERVICE=WFS&REQUEST=GetCapabilities';
 
     function _done() { capsBtn.disabled = false; capsBtn.textContent = 'Get layers'; }
 
@@ -1746,6 +1811,30 @@ function _addBasemapUI(cfg) {
           const selCrs = defaultCrs || (preferred.find(c => crsCodes.includes(c)) || all[0]);
           _fillSelect(crsSelect, all, selCrs);
         }
+        // Output format support: scan WFS 1.x <Format> and WFS 2.0 <Parameter name="outputFormat"><Value>.
+        // getElementsByTagNameNS('*', name) is namespace-agnostic — needed because PCN uses ows:Value/ows:Parameter.
+        // If no format token contains "json", server is GML-only (e.g. MapServer) → skip outputFormat=json in GetFeature.
+        const fmtTexts = [
+          ...[...xml.getElementsByTagNameNS('*', 'Format')].map(el => el.textContent),
+          ...[...xml.getElementsByTagNameNS('*', 'Value')].filter(v => {
+            const par = v.parentNode;
+            return par && par.localName === 'Parameter' && (par.getAttribute('name') || '').toLowerCase() === 'outputformat';
+          }).map(el => el.textContent)
+        ].map(t => t.trim().toLowerCase()).filter(Boolean);
+        const jsonSupported = fmtTexts.length === 0 || fmtTexts.some(t => t.includes('json'));
+        // Auto-select WFS version from <ows:ServiceTypeVersion> if dropdown lists it (PCN advertises only 1.1.0)
+        const verEl = xml.getElementsByTagNameNS('*', 'ServiceTypeVersion')[0];
+        let capsVersion = null;
+        if (verEl) {
+          const v = verEl.textContent.trim();
+          const verSelect = document.getElementById('ws-version');
+          if (verSelect && [...verSelect.options].some(o => o.value === v)) {
+            verSelect.value = v;
+            capsVersion = v;
+          }
+        }
+        _wfsCapsByUrl[url] = { jsonSupported, version: capsVersion };
+        if (!jsonSupported) toastMsg('Server: GML only — GeoJSON not advertised', 'warn');
       }
 
       toastMsg(names.length + ' layer' + (names.length > 1 ? 's' : '') + ' found', 'success');
@@ -1756,16 +1845,16 @@ function _addBasemapUI(cfg) {
       const ctrl = new AbortController();
       const tid = setTimeout(() => ctrl.abort(), 10000);
       fetch(capsUrl, { signal: ctrl.signal })
-        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-        .then(text => _parseCaps(text))
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+        .then(buf => _parseCaps(_decodeXmlBuffer(buf)))
         .catch(e => toastMsg('Connection failed: ' + e.message, 'error'))
         .finally(() => { clearTimeout(tid); _done(); });
     }
 
     if (window.cordova && cordova.plugin && cordova.plugin.http) {
       const doGet = () => {
-        cordova.plugin.http.get(capsUrl, {}, {},
-          res => { try { _parseCaps(res.data); } catch(e) { toastMsg('Parse error: ' + e.message, 'error'); } _done(); },
+        cordova.plugin.http.sendRequest(capsUrl, { method:'get', responseType:'arraybuffer' },
+          res => { try { _parseCaps(_decodeXmlBuffer(res.data)); } catch(e) { toastMsg('Parse error: ' + e.message, 'error'); } _done(); },
           err => {
             const detail = err ? (err.error || err.message || JSON.stringify(err)) : 'unknown';
             toastMsg('Plugin err: ' + detail, 'error');
@@ -1814,6 +1903,8 @@ function _addBasemapUI(cfg) {
     const cfg = { id, type, url, name, layers, version, crs, protected: isProtected };
     if (minZoom !== undefined) cfg.minZoom = minZoom;
     if (filterAttr && filterVals) { cfg.filterAttr = filterAttr; cfg.filterVals = filterVals; }
+    // Carry over caps-derived traits only if the URL still matches what was inspected
+    if (type === 'wfs' && _wfsCapsByUrl[url] && _wfsCapsByUrl[url].jsonSupported === false) cfg.jsonSupported = false;
 
     /* ── Overlay: add on top of current basemap, show in Layers panel ── */
     if (useAs === 'overlay') {

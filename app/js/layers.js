@@ -325,6 +325,9 @@ function enhanceKMLSublayer(layer) {
     div.appendChild(pickerDiv);
   }
 
+  // Prevent popup interactions from leaking to the map (nav pick mode, scroll-zoom)
+  L.DomEvent.disableClickPropagation(div);
+  L.DomEvent.disableScrollPropagation(div);
   layer.bindPopup(div, { maxWidth: 280 });
 }
 

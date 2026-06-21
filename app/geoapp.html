@@ -545,7 +545,7 @@
             <div class="guide-section">
               <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>Layers</h4>
               <div class="guide-item"><span class="guide-key">Basemap</span><span class="guide-desc">Select background map from the list</span></div>
-              <div class="guide-item"><span class="guide-key">Add web map</span><span class="guide-desc">Add WMS, WFS, WMTS/XYZ or ArcGIS MapServer by URL. WMS overlay: single GetMap image per viewport (non-tiled), OL reprojects from server native CRS (EPSG:4258/4326/3857) to map CRS — ideal for raster overlays. WFS: vector features (polygons/points) fetched per viewport above the configured min zoom (default 15 — lower values risk huge downloads), rendered as GeoJSON — best for cadastral/topographic data. Tap "Get layers" to auto-detect layer names. Overlay layers are saved and restored on next launch with their opacity and visibility state.</span></div>
+              <div class="guide-item"><span class="guide-key">Add web map</span><span class="guide-desc">Add WMS, WFS, WMTS/XYZ or ArcGIS MapServer by URL. WMS overlay: single GetMap image per viewport (non-tiled), OL reprojects from server native CRS (EPSG:4258/4326/3857) to map CRS — ideal for raster overlays. WFS: vector features (polygons/points) fetched per viewport above the configured min zoom (default 15 — lower values risk huge downloads), rendered as GeoJSON — best for cadastral/topographic data. Tap "Get layers" to auto-detect layer names. Overlay layers are saved and restored on next launch with their opacity and visibility state. Supports OGC-compliant servers (GeoServer, deegree, MapServer, QGIS Server); MapServer endpoints with <code>?map=...</code> are preserved. Tested on Agenzia delle Entrate INSPIRE, PCN (minambiente) and IGM.</span></div>
               <div class="guide-item"><span class="guide-key">WFS filter</span><span class="guide-desc">Filter attribute and filter values fields let you show only matching features. Load the layer without filter first, tap a feature to see attribute names in the popup. Multiple exact values: comma-separated (e.g. <code>A001,B002</code>). Wildcards: <code>*</code> (any characters), <code>?</code> (single character) — e.g. <code>MIL*</code>. Uses OGC Filter Encoding (<code>PropertyIsEqualTo</code> / <code>PropertyIsLike</code>) — supported by GeoServer, deegree, MapServer, QGIS Server. Once the layer is loaded, tap the ▽ button on its sidebar entry to edit the filter in place — no need to remove and re-add.</span></div>
               <div class="guide-item"><span class="guide-key">WFS selection</span><span class="guide-desc">When WFS layers are loaded a badge with "⊙ Select" appears. Tap it to activate click-to-select mode: if multiple WFS layers are loaded a picker appears to choose which layer to target — only features of that layer respond to tap-to-select, the others open normally. Once a layer is chosen, tap any feature to select/deselect it instantly (no popup). Selected features show a permanent label sourced from the <code>label</code> or <code>name</code> property when present (cadastrals: parcel code/number). The badge shows the active layer name. Tap "⊙ Select" again to reset. The popup "☆ Select" button also works as an alternative. The count badge shows selections — tap ⬇ KML to export, ✕ to clear all.</span></div>
               <div class="guide-item"><span class="guide-key">Load file</span><span class="guide-desc">Import KML, KMZ, GeoJSON, GPX — drag &amp; drop or tap. KML exported from WFS selection shows catasto attributes in the popup when tapped.</span></div>
@@ -888,7 +888,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">1.4.9</span></div>
+      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">1.5.4</span></div>
       <div class="about-row"><span class="lbl">Author</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">License</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — Open Source</a></span></div>
       <div class="about-row"><span class="lbl">Engine</span><span class="val">Leaflet · Cordova · Android</span></div>
@@ -979,6 +979,37 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (_hadController) location.reload(); });
   window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => reg.update()).catch(() => {}); });
 }
+
+/* Safe mode: if the previous session was killed while tiles were still loading,
+   ask the SW to return 503 on cache misses for a few seconds so Leaflet shows
+   blanks instead of piling up hanging fetches that freeze the UI. */
+(function nvSafeMode() {
+  const FLAG = 'nv_tile_pending';
+  const SAFE_MS = 5000;
+  let _pending = 0;
+  window._nvTileStart = function() {
+    _pending++;
+    if (_pending === 1) { try { localStorage.setItem(FLAG, '1'); } catch(_){} }
+  };
+  window._nvTileEnd = function() {
+    _pending = Math.max(0, _pending - 1);
+    if (_pending === 0) { try { localStorage.removeItem(FLAG); } catch(_){} }
+  };
+  let wasKilled = false;
+  try { wasKilled = localStorage.getItem(FLAG) === '1'; } catch(_) {}
+  if (!wasKilled) return;
+  if (!navigator.serviceWorker || !navigator.serviceWorker.controller) {
+    try { localStorage.removeItem(FLAG); } catch(_){}
+    return;
+  }
+  try {
+    const ch = new MessageChannel();
+    navigator.serviceWorker.controller.postMessage(
+      { type: 'safeMode', until: Date.now() + SAFE_MS },
+      [ch.port2]
+    );
+  } catch(_) {}
+})();
 </script>
 
 <!-- proj4 + OpenLayers (WMS reprojection — must load before app scripts) -->

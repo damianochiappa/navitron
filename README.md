@@ -11,14 +11,14 @@ An offline-capable GIS web app packaged as an Android APK via Apache Cordova. Bu
 ## Features
 
 - **Maps** — OpenTopoMap, OpenStreetMap, ESRI (Satellite, Topo, NatGeo), Stadia Satellite, CartoDB; custom WMS/WMTS/ArcGIS layers with opacity control
-- **Catasto (Italy)** — WMS labels + WFS Parcels and Sheets (Agenzia delle Entrate) preloaded
+- **Catasto (Italy)** — WMS labels + WFS Parcels and Sheets (Agenzia delle Entrate INSPIRE) preloaded; PCN (minambiente) and IGM Italian WFS supported via "Add web map"
 - **Offline tile cache** — download any basemap within a KML boundary for offline use (Service Worker)
 - **GPS** — real-time position, accuracy circle, UTM/MGRS coordinates, terrain elevation (Open-Meteo); flight mode auto-detection (AGL threshold)
 - **Navigation** — OSRM routing (driving, cycling, walking); heading-up map rotation with direction arrow; off-route detection and automatic recalculation; speed/distance/ETA HUD; walking view cone
 - **Track recording** — GPS track with stats; elevation profile chart; export as GPX or KML
 - **Draw & measure** — markers, polylines, polygons, circles; polyline measurement; distance/area calculation
 - **KML/KMZ/GeoJSON/GPX import** — layer management, vertex editing, attribute popup, dissolve polygons (turf.js), rename, export
-- **WFS** — live vector features with filtering, style customization, selection export to KML
+- **WFS** — live vector features with filtering, style customization, selection export to KML; supports WFS 2.0 + legacy 1.x with GML 3.1.1, ISO-8859-1 encoding, MapServer `?map=...` endpoints; tested on Agenzia delle Entrate (INSPIRE), PCN (minambiente), IGM
 - **Coordinate tools** — go-to by DD/DMS/UTM/MGRS, format converter, bookmarks
 - **ArcGIS Online** — token authentication for protected services
 
@@ -26,7 +26,7 @@ An offline-capable GIS web app packaged as an Android APK via Apache Cordova. Bu
 
 ## Requirements
 
-- Android device (ARM64, Android 10+)
+- Android device (Android 10+)
 - [Termux](https://github.com/termux/termux-app) + proot-distro (Ubuntu)
 - Node.js + Cordova CLI 12 (installed in Termux) — uses `cordova-android` 13 platform
 - Android SDK 34 + Java 17 (installed in proot Ubuntu by the build script)

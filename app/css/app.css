@@ -720,7 +720,7 @@ a.polyline-measure-controlOnBgColor:hover {
 /* KML popup dark theme */
 .leaflet-popup-content table { width: 100%; border-collapse: collapse; }
 .leaflet-popup-content td,
-.leaflet-popup-content th { background: transparent !important; background-color: transparent !important; color: var(--text) !important; border-color: var(--border) !important; padding: 3px 6px; font-size: 12px; }
+.leaflet-popup-content th { background: transparent !important; background-color: transparent !important; color: var(--text) !important; border-color: var(--border) !important; padding: 3px 6px; font-size: 12px; overflow-wrap: anywhere; word-break: break-word; }
 .leaflet-popup-content tr:nth-child(even) td { background: rgba(255,255,255,.04) !important; }
 .leaflet-popup-content font { color: var(--text) !important; }
 .leaflet-popup-content b, .leaflet-popup-content strong { color: var(--accent) !important; }
@@ -729,7 +729,8 @@ a.polyline-measure-controlOnBgColor:hover {
 /* WFS popup: auto-sized to content */
 .wfs-popup .leaflet-popup-content-wrapper { width: max-content; max-width: 80vw; }
 .wfs-popup .leaflet-popup-content { width: auto !important; }
-.wfs-popup .leaflet-popup-content table { width: auto; white-space: nowrap; }
+/* Auto-grow up to 80vw; long values wrap thanks to overflow-wrap on td */
+.wfs-popup .leaflet-popup-content table { width: auto; }
 
 /* Layer color swatch */
 .layer-color {

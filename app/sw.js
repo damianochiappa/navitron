@@ -9,6 +9,11 @@ const EVICT_STEP = 5000;
 // Lazy-loaded tile count (avoids cache.keys() on every fetch)
 let _tileCount = -1;
 
+// Safe mode: when the previous session was killed mid-tile-load, the page
+// sets this so we short-circuit cache misses to 503 for a few seconds,
+// letting Leaflet show blanks instead of piling up hanging fetches.
+let _safeModeUntil = 0;
+
 /* Strip rotating subdomains so tiles cached under 'a.' are found for 'b.' or 'c.'
    Handles: a./b./c. (OSM family) and mt0.-mt3. (Google Maps) */
 function _normUrl(url) {
@@ -58,6 +63,13 @@ self.addEventListener('activate', e => {
   self.clients.claim();
 });
 
+self.addEventListener('message', e => {
+  if (e.data && e.data.type === 'safeMode') {
+    _safeModeUntil = Number(e.data.until) || 0;
+    if (e.ports && e.ports[0]) e.ports[0].postMessage({ ack: true });
+  }
+});
+
 self.addEventListener('fetch', e => {
   const url = e.request.url;
 
@@ -69,6 +81,10 @@ self.addEventListener('fetch', e => {
         const normReq = new Request(normUrl);
         const cached = await cache.match(normReq, { ignoreVary: true });
         if (cached) return cached;
+
+        if (Date.now() < _safeModeUntil) {
+          return new Response('', { status: 503, statusText: 'SafeMode' });
+        }
 
         const response = await _fetchTile(e.request);
         if (!response) {
