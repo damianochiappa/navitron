@@ -1,10 +1,25 @@
 # Navitron GIS
 
-An offline-capable GIS web app packaged as an Android APK via Apache Cordova. Built and tested entirely on an Android device using Termux + proot-distro.
+Offline-capable GIS app for Android, built for fieldwork on Italian cadastral parcels — surveyors, agronomists (PAC/AGEA), technicians. Packaged as APK via Apache Cordova; built and tested entirely on-device with Termux + proot-distro.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Download APK](https://img.shields.io/badge/Download-APK-brightgreen.svg)](https://github.com/damianochiappa/navitron/releases/latest)
 
 ![Navitron demo](https://github.com/user-attachments/assets/b615fea0-fc5c-4655-8e4f-f18e5baec1f5)
+
+---
+
+## Install (recommended)
+
+No build required — download and install the APK:
+
+1. Open the **[latest Release](https://github.com/damianochiappa/navitron/releases/latest)** and download `Navitron.apk`
+2. On your phone, allow *Install from unknown sources* for the browser or file manager you use
+3. Open the downloaded file and confirm installation
+
+**Requirements:** Android 10+.
+
+> Navitron is sideloaded, not on the Play Store. Android will show an "unknown sources" warning — this is expected.
 
 ---
 
@@ -24,16 +39,18 @@ An offline-capable GIS web app packaged as an Android APK via Apache Cordova. Bu
 
 ---
 
-## Requirements
+## Build from source (advanced, optional)
+
+> This section is only for contributors who want to modify the code. For regular use, install the APK from the [latest Release](https://github.com/damianochiappa/navitron/releases/latest).
+
+### Requirements
 
 - Android device (Android 10+)
 - [Termux](https://github.com/termux/termux-app) + proot-distro (Ubuntu)
 - Node.js + Cordova CLI 12 (installed in Termux) — uses `cordova-android` 13 platform
 - Android SDK 34 + Java 17 (installed in proot Ubuntu by the build script)
 
----
-
-## Build
+### Build
 
 The build runs entirely on-device using Termux. There is no desktop build environment.
 
@@ -51,9 +68,7 @@ bash build_navitron_fast.sh
 
 The signed APK is written to `output/Navitron.apk`. Signing uses a local keystore generated at first build.
 
----
-
-## Private tile providers
+### Private tile providers
 
 The file `app/js/basemaps-private.js` (excluded from this repo via `.gitignore`) can override the default tile URLs at runtime. The HTML loads it silently if present:
 
