@@ -1,0 +1,26 @@
+title: Navitron GIS
+description: Android GIS app with WFS vector cadastre support and offline tile cache, built for fieldwork on Italian cadastral parcels (Cordova, Termux on-device build).
+url: https://damianochiappa.github.io
+baseurl: /navitron
+
+plugins:
+  - jekyll-sitemap
+  - jekyll-seo-tag
+
+keywords: WFS, GIS, cadastre, catasto, INSPIRE, Italian cadastral parcels, offline, PAC, AGEA, UTM, MGRS, Android, Leaflet
+
+exclude:
+  - apk/
+  - app/
+  - src/
+  - output/
+  - Navitron.apk.idsig
+  - DEMO.gif
+  - build_navitron.sh
+  - build_navitron_fast.sh
+
+defaults:
+  - scope:
+      path: "google*.html"
+    values:
+      sitemap: false
