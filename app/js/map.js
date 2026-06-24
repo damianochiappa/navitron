@@ -1164,6 +1164,147 @@ const _WFSLayer = L.Layer.extend({
     if (this._map) this._update();
   },
 
+  /* Resolve the geographic extent of features matching the active filter, ignoring the current viewport.
+     Issues a GetFeature with the FILTER predicate only (no BBOX), capped at 50 features.
+     Calls callback(bounds, err): bounds is L.LatLngBounds on success, null + err string on failure. */
+  findFilteredExtent(callback) {
+    if (!this.options.filterAttr || !this.options.filterVals) {
+      callback(null, 'no filter active'); return;
+    }
+    // Agenzia Entrate cadastral WFS does not support server-side FILTER (see _update), so a global
+    // find by attribute is impossible — features can only be located by panning into their bbox.
+    if (/^CP:(CadastralParcel|CadastralZoning)$/i.test(this.options.typeName || '')) {
+      callback(null, 'server does not support filter — pan/zoom near the parcel');
+      return;
+    }
+    const ver  = parseFloat(this.options.version || '2.0');
+    const srsName = this.options.crs || (ver >= 2.0 ? 'urn:ogc:def:crs:EPSG::4326' : 'EPSG:4326');
+    const geoUrn  = /^urn:ogc:def:crs:/.test(srsName);
+    const geoEpsg = /^EPSG:(4326|4258|6706|4230)$/.test(srsName);
+    const swapAxes = geoUrn || (ver >= 2.0 && geoEpsg);
+
+    const is20   = ver >= 2.0;
+    const fns    = is20 ? 'fes' : 'ogc';
+    const fnsUri = is20 ? 'http://www.opengis.net/fes/2.0' : 'http://www.opengis.net/ogc';
+    const gmlNs  = is20 ? 'http://www.opengis.net/gml/3.2' : 'http://www.opengis.net/gml';
+    const propTag = is20 ? 'ValueReference' : 'PropertyName';
+    const xmlEsc = s => String(s).replace(/[<>&'"]/g,
+      c => ({'<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;'}[c]));
+
+    // Same CP-namespace handling as _update — kept inline to avoid coupling with the bbox-bound path.
+    const _isCadFilter = /^CP:(CadastralParcel|CadastralZoning)$/i.test(this.options.typeName || '');
+    const _cadNs = 'http://mapserver.gis.umn.edu/mapserver';
+    const _userHasPrefix = this.options.filterAttr.includes(':');
+    const filterAttrQName = (_isCadFilter && !_userHasPrefix)
+      ? 'CP:' + this.options.filterAttr
+      : this.options.filterAttr;
+    const attrEsc = xmlEsc(filterAttrQName);
+    const vals = this.options.filterVals.split(',').map(v => v.trim()).filter(Boolean);
+    const _hasWild = v => /[*?]/.test(v);
+    const eqs = vals.map(v => {
+      const propXml = `<${fns}:${propTag}>${attrEsc}</${fns}:${propTag}>`;
+      const litXml  = `<${fns}:Literal>${xmlEsc(v)}</${fns}:Literal>`;
+      return _hasWild(v)
+        ? `<${fns}:PropertyIsLike wildCard="*" singleChar="?" escapeChar="\\">${propXml}${litXml}</${fns}:PropertyIsLike>`
+        : `<${fns}:PropertyIsEqualTo>${propXml}${litXml}</${fns}:PropertyIsEqualTo>`;
+    }).join('');
+    const attrPred = vals.length > 1 ? `<${fns}:Or>${eqs}</${fns}:Or>` : eqs;
+    const cadNsAttr = _isCadFilter ? ` xmlns:CP="${_cadNs}"` : '';
+    const filterXml =
+      `<${fns}:Filter xmlns:${fns}="${fnsUri}" xmlns:gml="${gmlNs}"${cadNsAttr}>` +
+      `${attrPred}</${fns}:Filter>`;
+
+    const p = {
+      SERVICE:'WFS', VERSION: this.options.version, REQUEST:'GetFeature',
+      TYPENAMES: this.options.typeName,
+      TYPENAME:  this.options.typeName,
+      SRSNAME: srsName,
+      maxFeatures: 50, count: 50,
+      FILTER: filterXml
+    };
+    if (ver < 2.0 && this.options.jsonSupported) p.outputFormat = 'application/json';
+
+    const url = this._wfsUrl + '?' +
+      (this._wfsPre ? this._wfsPre + '&' : '') +
+      Object.entries(p).map(([k,v]) => k + '=' + encodeURIComponent(v)).join('&');
+
+    // Compute bounds from response — bounds-only extraction (no full feature parsing) keeps this lean
+    // and tolerant of GML variants. JSON path uses GeoJSON's always-lon,lat convention; GML path applies
+    // axis swap when the negotiated CRS returns lat,lon (urn form or WFS 2.0 with geographic EPSG).
+    const _coordsFromGeoJSON = geom => {
+      if (!geom) return [];
+      const out = [];
+      const walk = c => {
+        if (!Array.isArray(c)) return;
+        if (typeof c[0] === 'number') { out.push([c[0], c[1]]); return; }
+        c.forEach(walk);
+      };
+      walk(geom.coordinates);
+      return out;
+    };
+    const _boundsFromText = text => {
+      try {
+        const gj = JSON.parse(text);
+        if (gj && gj.features && gj.features.length) {
+          let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+          for (const f of gj.features) for (const [x,y] of _coordsFromGeoJSON(f.geometry)) {
+            if (x<minX) minX=x; if (x>maxX) maxX=x; if (y<minY) minY=y; if (y>maxY) maxY=y;
+          }
+          if (minX === Infinity) return null;
+          return L.latLngBounds([minY,minX],[maxY,maxX]);
+        }
+      } catch(_) {}
+      try {
+        const dom = new DOMParser().parseFromString(text, 'application/xml');
+        if (dom.querySelector('parsererror')) return null;
+        const G3 = 'http://www.opengis.net/gml/3.2', G2 = 'http://www.opengis.net/gml';
+        // Collect every Envelope in the document (top-level boundedBy + per-feature) and union them.
+        const envs = [...dom.getElementsByTagNameNS(G3,'Envelope'), ...dom.getElementsByTagNameNS(G2,'Envelope')];
+        let minA=Infinity,minB=Infinity,maxA=-Infinity,maxB=-Infinity;
+        for (const env of envs) {
+          const lc = env.getElementsByTagNameNS(G3,'lowerCorner')[0] || env.getElementsByTagNameNS(G2,'lowerCorner')[0];
+          const uc = env.getElementsByTagNameNS(G3,'upperCorner')[0] || env.getElementsByTagNameNS(G2,'upperCorner')[0];
+          if (!lc || !uc) continue;
+          const l = lc.textContent.trim().split(/\s+/).map(Number);
+          const u = uc.textContent.trim().split(/\s+/).map(Number);
+          if (l[0]<minA) minA=l[0]; if (l[1]<minB) minB=l[1];
+          if (u[0]>maxA) maxA=u[0]; if (u[1]>maxB) maxB=u[1];
+        }
+        if (minA === Infinity) {
+          // No envelopes — fall back to scanning pos/posList for raw coords.
+          for (const el of [...dom.getElementsByTagNameNS(G3,'posList'), ...dom.getElementsByTagNameNS(G2,'posList'),
+                            ...dom.getElementsByTagNameNS(G3,'pos'),     ...dom.getElementsByTagNameNS(G2,'pos')]) {
+            const n = el.textContent.trim().split(/\s+/).map(Number);
+            for (let i=0; i+1<n.length; i+=2) {
+              const a=n[i], b=n[i+1];
+              if (a<minA) minA=a; if (a>maxA) maxA=a; if (b<minB) minB=b; if (b>maxB) maxB=b;
+            }
+          }
+          if (minA === Infinity) return null;
+        }
+        return swapAxes
+          ? L.latLngBounds([minA, minB], [maxA, maxB])  // server returned lat,lon
+          : L.latLngBounds([minB, minA], [maxB, maxA]); // server returned lon,lat
+      } catch(_) { return null; }
+    };
+
+    const _onText = text => {
+      const b = _boundsFromText(text);
+      if (b && b.isValid()) callback(b, null);
+      else callback(null, 'no features match filter');
+    };
+
+    if (window.cordova && cordova.plugin && cordova.plugin.http) {
+      cordova.plugin.http.sendRequest(url, { method:'get', responseType:'arraybuffer' },
+        res => _onText(_decodeXmlBuffer(res.data)),
+        () => callback(null, 'request failed')
+      );
+    } else {
+      fetch(url).then(r => r.arrayBuffer()).then(buf => _onText(_decodeXmlBuffer(buf)))
+        .catch(() => callback(null, 'request failed'));
+    }
+  },
+
   _schedule() { clearTimeout(this._timer); this._timer = setTimeout(() => this._update(), 400); },
 
   _update() {
@@ -1202,7 +1343,33 @@ const _WFSLayer = L.Layer.extend({
     // Request JSON only when the server advertised it (default true for back-compat with hand-typed URLs).
     // For GML-only servers (e.g. MapServer PCN) omit the param so the server returns its default GML, parsed below.
     if (ver < 2.0 && this.options.jsonSupported) p.outputFormat = 'application/json';
+    // Agenzia Entrate INSPIRE WFS does NOT advertise Filter_Capabilities and rejects any GetFeature
+    // carrying a FILTER parameter ("InvalidFormat / Richiesta non valida"), regardless of namespace or
+    // operator form. For CP:CadastralParcel / CP:CadastralZoning we must fetch by BBOX only and filter
+    // the returned features locally before rendering.
+    const _isCadFilter = /^CP:(CadastralParcel|CadastralZoning)$/i.test(this.options.typeName || '');
+    // Build a client-side matcher when the filter is active. Supports comma-separated values and
+    // OGC-style wildcards (* and ?), matched case-insensitively against the stringified property value.
+    let _clientFilter = null;
     if (this.options.filterAttr && this.options.filterVals) {
+      const _fAttr = this.options.filterAttr;
+      const _fVals = this.options.filterVals.split(',').map(v => v.trim()).filter(Boolean);
+      const _matchers = _fVals.map(v => {
+        if (/[*?]/.test(v)) {
+          const rx = '^' + v.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
+          return new RegExp(rx, 'i');
+        }
+        return v.toLowerCase();
+      });
+      _clientFilter = props => {
+        if (!props) return false;
+        const raw = props[_fAttr];
+        if (raw == null || raw === '') return false;
+        const sv = String(raw).toLowerCase();
+        return _matchers.some(m => m instanceof RegExp ? m.test(sv) : sv === m);
+      };
+    }
+    if (!_isCadFilter && this.options.filterAttr && this.options.filterVals) {
       // OGC Filter Encoding XML — WFS standard, supported by deegree, GeoServer, MapServer, QGIS Server.
       // BBOX is embedded inside the same <Filter> via <And>: the spec forbids BBOX param + FILTER together.
       const is20   = ver >= 2.0;
@@ -1243,6 +1410,11 @@ const _WFSLayer = L.Layer.extend({
 
     const _render = geojson => {
       if (reqId !== this._reqId) return;
+      // Client-side filter pass for servers that don't support FILTER (Agenzia Entrate cadastral WFS).
+      // Applied before the empty-check so the toast distinguishes "no features at all" vs "filtered out".
+      if (_clientFilter && _isCadFilter && geojson.features) {
+        geojson = { ...geojson, features: geojson.features.filter(f => _clientFilter(f.properties)) };
+      }
       if (!geojson.features || geojson.features.length === 0) {
         const _hasFilter = this.options.filterAttr && this.options.filterVals;
         toastMsg(_hasFilter

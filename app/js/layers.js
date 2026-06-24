@@ -98,6 +98,7 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
     <input type="color" class="layer-color" value="${initColor}" title="Layer color">
     <button class="layer-hollow${initHollow ? ' active' : ''}" title="Hollow — no fill">\u2205</button>
     <button class="layer-zoom" title="Zoom to layer">\u29C6</button>
+    ${opts.isWfs ? '<button class="layer-find" title="Find filtered features (ignore viewport)">\u2316</button>' : ''}
     ${opts.isWfs ? '<button class="layer-filter" title="Edit WFS filter">\u25BD</button>' : ''}
     <button class="layer-exp"  title="Export file">\u2B07</button>
     ${opts.isKml ? '<button class="layer-edit" title="Edit KML vertices">\u270F</button>' : ''}
@@ -225,6 +226,28 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
       showFilterEditModal(curAttr, curVals, (attr, vals) => {
         if (l && typeof l.setFilter === 'function') l.setFilter(attr, vals);
         if (opts.onFilterChange) opts.onFilterChange({ filterAttr: attr, filterVals: vals });
+      });
+    });
+    // Find filtered features ignoring the current viewport: queries WFS with FILTER only (no BBOX),
+    // then fitBounds on the result so the user can locate a parcel by its label/code from anywhere.
+    item.querySelector('.layer-find').addEventListener('click', () => {
+      const l = loadedLayers[id];
+      if (!l || typeof l.findFilteredExtent !== 'function') return;
+      if (!l.options.filterAttr || !l.options.filterVals) {
+        toastMsg('Set a filter first to find features', 'warn'); return;
+      }
+      const btn = item.querySelector('.layer-find');
+      btn.disabled = true;
+      const _origText = btn.textContent;
+      btn.textContent = '\u2026';
+      l.findFilteredExtent((bounds, err) => {
+        btn.disabled = false; btn.textContent = _origText;
+        if (bounds) {
+          map.fitBounds(bounds, { padding: [40,40], animate: true, maxZoom: 19 });
+          // After fitBounds, the bbox-bound refresh will pick up and render the matched features.
+        } else {
+          toastMsg('Find: ' + (err || 'no result'), 'warn');
+        }
       });
     });
   }
