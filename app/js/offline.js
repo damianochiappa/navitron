@@ -164,15 +164,20 @@
           if (cache && await cache.match(normReq, { ignoreVary: true })) return;
 
           let response = null;
+          let corsRejected = false;
           // Try CORS first: CORS-capable servers (OSM, Carto, ESRI) return
           // a readable response that caches cleanly and renders offline.
+          // A non-ok status (429/5xx) means the server actively refused —
+          // do NOT fall back to no-cors, otherwise the same error response
+          // would be saved as an opaque "tile" and poison the offline basemap.
           try {
             const r = await fetch(url, { mode: 'cors', credentials: 'omit', signal });
             if (r.ok) response = r;
-          } catch (_) {}
-          // Fallback no-cors: opaque response — works if the server returns
-          // actual image data (not an error page).
-          if (!response && !signal.aborted) {
+          } catch (_) { corsRejected = true; }
+          // Fallback no-cors only when CORS was rejected at transport level
+          // (server lacks CORS headers): opaque response is the only way to
+          // get pixels for servers that return real image data without CORS.
+          if (!response && corsRejected && !signal.aborted) {
             try {
               response = await fetch(url, { mode: 'no-cors', credentials: 'omit', signal });
             } catch (_) {}

@@ -33,18 +33,24 @@ function _isTileUrl(url) {
 
 /* Fetch a tile trying CORS first (readable, cacheable response), then no-cors.
    CORS responses (Access-Control-Allow-Origin: *) render correctly offline.
-   No-cors responses are opaque and may not render in all WebViews — used
-   only as last resort.  Any non-ok CORS result falls through to no-cors
-   so rate-limits or 4xx errors don't produce blank tiles.
-   Returns null on total failure. */
+   No-cors is the fallback only when CORS is rejected at the transport/header
+   level (server lacks CORS); in that case the opaque response is the only way
+   to get pixels. If CORS succeeds but the server returns a non-ok status
+   (429/5xx), we return that status directly — we do NOT retry as no-cors,
+   because the response would be identical but opaque, and caching an opaque
+   error poisons the cache permanently for that tile.
+   Returns null on total network failure. */
 async function _fetchTile(request) {
+  let corsRejected = false;
   try {
-    const r = await fetch(request.url, { mode: 'cors', credentials: 'omit' });
-    if (r.ok) return r;
-  } catch (_) {}
-  try {
-    return await fetch(request.url, { mode: 'no-cors', credentials: 'omit' });
-  } catch (_) { return null; }
+    return await fetch(request.url, { mode: 'cors', credentials: 'omit' });
+  } catch (_) { corsRejected = true; }
+  if (corsRejected) {
+    try {
+      return await fetch(request.url, { mode: 'no-cors', credentials: 'omit' });
+    } catch (_) {}
+  }
+  return null;
 }
 
 self.addEventListener('install', e => {
