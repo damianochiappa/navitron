@@ -515,6 +515,10 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               Cancel
             </button>
+            <button class="btn btn-secondary btn-full" id="btn-offline-clear" style="margin-top:8px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+              Clear tile cache
+            </button>
           </div>
         </div>
       </div><!-- /panel-offline -->
@@ -608,6 +612,7 @@
               <div class="guide-item"><span class="guide-key">Cache tab</span><span class="guide-desc">Select KML extent + max zoom + map → tap "Convert cache to map": scans cache, downloads all missing tiles (zoom 1 to max), registers offline basemap</span></div>
               <div class="guide-item"><span class="guide-key">Offline basemap</span><span class="guide-desc">Appears in basemap list — serves all zoom levels from cache, no internet needed</span></div>
               <div class="guide-item"><span class="guide-key">Cancel</span><span class="guide-desc">Stops the download mid-way; tiles already fetched remain in cache</span></div>
+              <div class="guide-item"><span class="guide-key">Clear tile cache</span><span class="guide-desc">Wipes all cached tiles (no other app data is touched). Offline basemaps already registered will need to be re-downloaded</span></div>
             </div>
 
           </div>
@@ -888,7 +893,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">1.5.9</span></div>
+      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">1.6.2</span></div>
       <div class="about-row"><span class="lbl">Author</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">License</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — Open Source</a></span></div>
       <div class="about-row"><span class="lbl">Engine</span><span class="val">Leaflet · Cordova · Android</span></div>

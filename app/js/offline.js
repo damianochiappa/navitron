@@ -10,12 +10,39 @@
   const MAX_SIZE_GB    = 4;
   const TOS_MAPS       = ['osm', 'osm_std', 'google_hybrid', 'google_maps'];
   const TILE_CACHE_NAME = 'navitron-tiles-v1';
-  const DL_CONCURRENCY = 3;   // parallel tile fetches
-  const DL_DELAY_MS    = 50;  // ms pause between batches (rate-limit)
+  const DL_CONCURRENCY = 3;     // parallel tile fetches
+  const DL_DELAY_MS    = 50;    // ms pause between batches (rate-limit)
+  const TILE_TIMEOUT_MS = 8000; // hard JS-side cap per request
 
   let _downloading      = false;
   let _cancelled        = false;
   let _batchAbort       = null;
+
+  /* Bounded fetch: WebView/Cordova may not honour AbortSignal on in-flight
+     TCP requests, so we race the fetch against a JS timeout and a cancel
+     poller — guaranteeing each tile call resolves in bounded time even if
+     the underlying socket hangs.  Returns { kind, response } so the caller
+     can distinguish a real CORS rejection (→ fall back to no-cors) from a
+     timeout/cancel (→ skip, do not fall back).  Timers are always cleared
+     so no setInterval/setTimeout outlives the call. */
+  function _fetchBounded(url, opts) {
+    return new Promise(resolve => {
+      let done = false;
+      const finish = v => {
+        if (done) return;
+        done = true;
+        clearTimeout(toId);
+        clearInterval(intId);
+        resolve(v);
+      };
+      const toId = setTimeout(() => finish({ kind: 'timeout' }), TILE_TIMEOUT_MS);
+      const intId = setInterval(() => { if (_cancelled) finish({ kind: 'cancel' }); }, 100);
+      fetch(url, opts).then(
+        r => finish({ kind: 'ok', response: r }),
+        () => finish({ kind: 'reject' })
+      );
+    });
+  }
 
   /* ===== TILE MATH ===== */
   function _lonToX(lon, z) {
@@ -170,17 +197,20 @@
           // A non-ok status (429/5xx) means the server actively refused —
           // do NOT fall back to no-cors, otherwise the same error response
           // would be saved as an opaque "tile" and poison the offline basemap.
-          try {
-            const r = await fetch(url, { mode: 'cors', credentials: 'omit', signal });
-            if (r.ok) response = r;
-          } catch (_) { corsRejected = true; }
+          const corsResult = await _fetchBounded(url, { mode: 'cors', credentials: 'omit', signal });
+          if (corsResult.kind === 'ok' && corsResult.response.ok) {
+            response = corsResult.response;
+          } else if (corsResult.kind === 'reject') {
+            corsRejected = true;
+          }
           // Fallback no-cors only when CORS was rejected at transport level
           // (server lacks CORS headers): opaque response is the only way to
           // get pixels for servers that return real image data without CORS.
-          if (!response && corsRejected && !signal.aborted) {
-            try {
-              response = await fetch(url, { mode: 'no-cors', credentials: 'omit', signal });
-            } catch (_) {}
+          // Timeouts and cancels are NOT eligible for fallback — would just
+          // double the hang or re-fire the cancelled work.
+          if (!response && corsRejected && !_cancelled) {
+            const ncResult = await _fetchBounded(url, { mode: 'no-cors', credentials: 'omit', signal });
+            if (ncResult.kind === 'ok') response = ncResult.response;
           }
 
           if (response && cache && (response.ok || response.type === 'opaque')) {
@@ -378,6 +408,42 @@
     if (cancelBtn) {
       cancelBtn.addEventListener('click', () => {
         if (_downloading) { _cancelled = true; if (_batchAbort) _batchAbort.abort(); }
+      });
+    }
+
+    /* Clear the entire tile cache.  Targets only navitron-tiles-v1 — does not
+       touch localStorage (saved view, custom basemaps), IndexedDB (drawings,
+       imported layers) or any other app state.  Offline basemaps registered
+       in customMapConfigs will still appear in the list but render blank
+       until re-downloaded. */
+    const clearBtn = document.getElementById('btn-offline-clear');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', async () => {
+        if (_downloading) { toastMsg('Cannot clear while download is in progress', 'error'); return; }
+        if (!window.caches) { toastMsg('Cache API not available', 'error'); return; }
+        if (!confirm('Clear the entire tile cache? Offline basemaps will need to be re-downloaded.')) return;
+        try {
+          // Use storage.estimate() to report freed size without enumerating
+          // cache entries (cache.keys() can take minutes on a full cache).
+          // The estimate is for the whole origin so it includes other storage
+          // subsystems, but tile bytes dominate by orders of magnitude.
+          const est = navigator.storage && navigator.storage.estimate;
+          const before = est ? ((await navigator.storage.estimate()).usage || 0) : 0;
+          const ok = await caches.delete(TILE_CACHE_NAME);
+          if (!ok) { toastMsg('No cache to clear', ''); return; }
+          let msg = 'Tile cache cleared';
+          if (est) {
+            const after = (await navigator.storage.estimate()).usage || 0;
+            const freed = Math.max(0, before - after);
+            if (freed > 0) {
+              const mb = freed / (1024 * 1024);
+              msg += ': ' + (mb >= 1024 ? (mb / 1024).toFixed(2) + ' GB' : mb.toFixed(0) + ' MB') + ' freed';
+            }
+          }
+          toastMsg(msg, 'success');
+        } catch (e) {
+          toastMsg('Error clearing cache: ' + e.message, 'error');
+        }
       });
     }
   })();
