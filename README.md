@@ -5,7 +5,10 @@ Offline-capable GIS app for Android, built for fieldwork on Italian cadastral pa
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Download APK](https://img.shields.io/badge/Download-APK-brightgreen.svg)](https://github.com/damianochiappa/navitron/releases/latest)
 
-![Navitron demo](https://github.com/user-attachments/assets/b615fea0-fc5c-4655-8e4f-f18e5baec1f5)
+<p>
+  <img src="https://github.com/user-attachments/assets/b615fea0-fc5c-4655-8e4f-f18e5baec1f5" width="45%" alt="Navitron demo" />
+  <img src="Demo2.png" width="45%" alt="WFS Catasto with full layer stack" />
+</p>
 
 ---
 
