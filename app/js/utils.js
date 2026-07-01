@@ -75,14 +75,78 @@ function calcBearing(lat1, lon1, lat2, lon2) {
   return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
 
-function toastMsg(msg, type='', dur) {
+// Cooldown per (target, type, msg-prefix): a burst of similar toasts (multiple WFS layers
+// updating on the same pan) collapses to one visible. Errors get the longest window.
+const _TOAST_COOLDOWN_MS = { error: 12000, warn: 8000, success: 4000, '': 4000, info: 4000 };
+const _TOAST_LAST = new Map();
+// Cap on concurrent toasts per non-sidebar host: keeps the map viewport uncluttered when
+// several layers speak at once. Errors are exempt (never dropped by cap).
+const _TOAST_MAP_CAP = 2;
+
+function toastMsg(msg, type='', dur, target='map') {
   if (dur === undefined) dur = type === 'error' ? 4000 : type === 'warn' ? 3500 : 2500;
-  const t = document.getElementById('toast');
+  // 'sidebar' target: only show when the sidebar is open. Closed → drop silently (user isn't
+  // looking at the sidebar, the toast is reactive to a sidebar interaction that didn't happen).
+  let host;
+  if (target === 'sidebar') {
+    const sb = document.getElementById('sidebar');
+    if (sb && sb.classList.contains('collapsed')) return;
+    host = document.getElementById('toast-sidebar') || document.getElementById('toast');
+  } else if (target === 'map-quiet') {
+    // Inverse of 'sidebar': drop when sidebar is open. For layer-driven noise (pan/zoom
+    // WFS status) that would overlap the map while the user is working in the sidebar.
+    const sb = document.getElementById('sidebar');
+    if (sb && !sb.classList.contains('collapsed')) return;
+    host = document.getElementById('toast');
+  } else {
+    host = document.getElementById('toast');
+  }
+  if (!host) return;
   const _icons = { error: '✖ ', warn: '⚠ ', success: '✔ ', info: 'ℹ ' };
-  t.textContent = (_icons[type] || '') + msg;
-  t.className = 'show ' + type;
-  clearTimeout(t._timer);
-  t._timer = setTimeout(() => t.className = '', dur);
+  const fullText = (_icons[type] || '') + msg;
+  const _schedule = (el) => {
+    if (el._dismissTid) clearTimeout(el._dismissTid);
+    if (el._removeTid) clearTimeout(el._removeTid);
+    el._dismissTid = setTimeout(() => {
+      el.classList.remove('show');
+      el._removeTid = setTimeout(() => { if (el.parentNode === host) host.removeChild(el); }, 320);
+    }, dur);
+  };
+  // Dedup: identical visible toast → reset its timer, no stacking.
+  const existing = Array.from(host.children).find(c => c.textContent === fullText);
+  if (existing) { _schedule(existing); return; }
+  // Rate-limit by (target, type, msg-prefix): similar-but-not-identical toasts (different
+  // layer names, different counts) within cooldown are dropped silently. Errors bypass.
+  if (type !== 'error') {
+    const cdKey = target + '\u0000' + type + '\u0000' + fullText.slice(0, 40);
+    const now = Date.now();
+    const last = _TOAST_LAST.get(cdKey) || 0;
+    const cd = _TOAST_COOLDOWN_MS[type] != null ? _TOAST_COOLDOWN_MS[type] : 4000;
+    if (now - last < cd) return;
+    _TOAST_LAST.set(cdKey, now);
+    // Opportunistic purge: entries older than 4× the largest cooldown are unreachable and
+    // safe to drop. Runs only when the map grows past a small threshold, so hot path stays O(1).
+    if (_TOAST_LAST.size > 32) {
+      const purgeBefore = now - 48000;
+      _TOAST_LAST.forEach((t, k) => { if (t < purgeBefore) _TOAST_LAST.delete(k); });
+    }
+  }
+  // FIFO cap on the map container: drop the oldest non-error toast when at capacity.
+  if (target !== 'sidebar') {
+    const nonError = Array.from(host.children).filter(c => !c.classList.contains('error'));
+    while (nonError.length >= _TOAST_MAP_CAP) {
+      const victim = nonError.shift();
+      if (victim._dismissTid) clearTimeout(victim._dismissTid);
+      if (victim._removeTid) clearTimeout(victim._removeTid);
+      if (victim.parentNode === host) host.removeChild(victim);
+    }
+  }
+  const item = document.createElement('div');
+  item.className = 'toast-item ' + (type || '');
+  item.textContent = fullText;
+  host.appendChild(item);
+  requestAnimationFrame(() => item.classList.add('show'));
+  _schedule(item);
 }
 
 function _xmlEsc(s) {

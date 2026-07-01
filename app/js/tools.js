@@ -98,7 +98,7 @@ function gotoCoord() {
     const p = val.split(/[\s,;]+/);
     lat = parseFloat(p[0]); lon = parseFloat(p[1]);
   }
-  if (isNaN(lat) || isNaN(lon)) { toastMsg('Unrecognized format (DD, DMS, MGRS, UTM)', 'error'); return; }
+  if (isNaN(lat) || isNaN(lon)) { toastMsg('Unrecognized format (DD, DMS, MGRS, UTM)', 'error', undefined, 'sidebar'); return; }
   if (gotoMarker) map.removeLayer(gotoMarker);
   map.flyTo([lat, lon], 14);
   gotoMarker = L.circleMarker([lat, lon], { radius: 10, color: '#e05252', fillColor: '#e05252', fillOpacity: 0.7, weight: 2 })
@@ -252,7 +252,7 @@ function _autoSaveConfig() {
 }
 
 function _importConfig(cfg) {
-  if (!cfg || !Array.isArray(cfg.maps)) { toastMsg('Invalid file', 'error'); return; }
+  if (!cfg || !Array.isArray(cfg.maps)) { toastMsg('Invalid file', 'error', undefined, 'sidebar'); return; }
   let added = 0;
   cfg.maps.forEach(c => {
     if (!c.id || !c.type || !c.url) return;
@@ -271,6 +271,7 @@ function _importConfig(cfg) {
             color:   c.color || undefined,
             hollow:  c.hollow || false,
             isWfs:   c.type === 'wfs',
+            silent:  true,
             onStateChange: ({ opacity, visible }) => {
               c.opacity = opacity;
               c.visible = visible;
@@ -319,16 +320,20 @@ function _importConfig(cfg) {
     });
     if (sslAdded > 0) {
       localStorage.setItem('navitron_ssl_exceptions', JSON.stringify(existing));
-      toastMsg('Loaded ' + sslAdded + ' SSL exception(s)', 'success');
+      toastMsg('Loaded ' + sslAdded + ' SSL exception(s)', 'success', undefined, 'sidebar');
     }
   }
 
   _autoSaveConfig();
-  if (added > 0) toastMsg('Loaded ' + added + ' maps', 'success');
+  // Suppress aggregate toast on boot-time restore (caller passes _bootRestore); only show on user-driven import.
+  if (added > 0 && !cfg._bootRestore) toastMsg('Loaded ' + added + ' maps', 'success', undefined, 'sidebar');
 }
 
 function _loadSavedConfig() {
-  try { const raw = localStorage.getItem(_CFG_KEY); if (raw) _importConfig(JSON.parse(raw)); } catch(e) {}
+  try {
+    const raw = localStorage.getItem(_CFG_KEY);
+    if (raw) { const c = JSON.parse(raw); c._bootRestore = true; _importConfig(c); }
+  } catch(e) {}
 }
 
 document.getElementById('btn-cfg-save').addEventListener('click', () => {
@@ -341,7 +346,7 @@ document.getElementById('cfg-file-input').addEventListener('change', function() 
   const reader = new FileReader();
   reader.onload = e => {
     try { _importConfig(JSON.parse(e.target.result)); }
-    catch(e) { toastMsg('Invalid JSON', 'error'); }
+    catch(e) { toastMsg('Invalid JSON', 'error', undefined, 'sidebar'); }
   };
   reader.readAsText(file); this.value = '';
 });
@@ -365,7 +370,7 @@ document.addEventListener('deviceready', () => {
         exceptions.push(host);
         localStorage.setItem('navitron_ssl_exceptions', JSON.stringify(exceptions));
         _autoSaveConfig();
-        toastMsg('SSL exception saved: ' + host, 'success');
+        toastMsg('SSL exception saved: ' + host, 'success', undefined, 'sidebar');
       }
     },
     () => {},
@@ -410,7 +415,7 @@ function addBookmark(name, lat, lon, zoom) {
   bookmarks.unshift(bm);
   _saveBookmarks();
   _renderBookmarks();
-  toastMsg('Bookmark saved: ' + bm.name, 'success');
+  toastMsg('Bookmark saved: ' + bm.name, 'success', undefined, 'sidebar');
   // Switch to bookmarks tab
   const bmBtn = document.querySelector('[data-panel="bookmarks"]');
   if (bmBtn) bmBtn.click();
@@ -547,8 +552,8 @@ function _requestLocationPermission() {
       status => {
         if (status && status.hasPermission) return;
         perms.requestPermissions(needed,
-          result => { if (!result || !result.hasPermission) toastMsg('Location denied \u2014 Settings \u203A Apps \u203A Navitron \u203A Permissions', 'error'); },
-          ()     => toastMsg('Location denied \u2014 Settings \u203A Apps \u203A Navitron \u203A Permissions', 'error')
+          result => { if (!result || !result.hasPermission) toastMsg('Location denied \u2014 Settings \u203A Apps \u203A Navitron \u203A Permissions', 'error', undefined, 'sidebar'); },
+          ()     => toastMsg('Location denied \u2014 Settings \u203A Apps \u203A Navitron \u203A Permissions', 'error', undefined, 'sidebar')
         );
       },
       () => perms.requestPermissions(needed, () => {}, () => {})

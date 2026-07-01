@@ -83,10 +83,35 @@ document.getElementById('nav-follow-btn').addEventListener('click', () => {
 
 L.control.scale({ maxWidth: 200, metric: true, imperial: false, position: 'bottomleft' }).addTo(map);
 
-L.control.polylineMeasure({
+/* Landscape-only collapsible headers for Draw (topleft) and Measure (topright).
+   Hidden in portrait via CSS; in landscape they toggle the corresponding stack. */
+const _makeToggle = (position, extraCls, title, svg, targetClass) => L.Control.extend({
+  options: { position },
+  onAdd(mp) {
+    const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-toggle ' + extraCls);
+    const a = L.DomUtil.create('a', '', div);
+    a.href = '#'; a.title = title;
+    a.innerHTML = svg;
+    L.DomEvent.disableClickPropagation(div);
+    L.DomEvent.on(a, 'click', e => {
+      L.DomEvent.preventDefault(e);
+      const on = mp.getContainer().classList.toggle(targetClass);
+      a.classList.toggle('toggle-on', on);
+    });
+    return div;
+  }
+});
+const _svgPencil = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
+const _svgRuler  = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15l6-6 12 12-6 6z"/><path d="M9 9l3 3M12 6l3 3M15 3l3 3"/></svg>';
+map.addControl(new (_makeToggle('topleft',  'leaflet-toggle-draw',    'Show/hide draw tools',    _svgPencil, 'draw-expanded'))());
+map.addControl(new (_makeToggle('topright', 'leaflet-toggle-measure', 'Show/hide measure tools', _svgRuler,  'measure-expanded'))());
+
+const _plMeasure = L.control.polylineMeasure({
   position: 'topright', unit: 'kilometres', showBearings: true,
   clearMeasurementsOnStop: false, showClearControl: true, showUnitControl: true
 }).addTo(map);
+/* Plugin container is only marked `leaflet-bar` — add a unique class so CSS can target it. */
+if (_plMeasure && _plMeasure.getContainer) _plMeasure.getContainer().classList.add('leaflet-polyline-measure');
 
 const drawnItems = L.featureGroup().addTo(map);
 
@@ -1161,7 +1186,11 @@ const _WFSLayer = L.Layer.extend({
   setFilter(attr, vals) {
     this.options.filterAttr = attr || '';
     this.options.filterVals = vals || '';
-    if (this._map) this._update();
+    // _schedule (debounced 400 ms) instead of _update: lets a same-tick fitBounds/setZoom collapse
+    // with the filter change into one final fetch, avoiding a stale-bounds fetch1 that would fire
+    // wfsupdate({count:0}) and consume the caller's .once('wfsupdate') listener before the map
+    // has moved to the target area.
+    if (this._map) this._schedule();
   },
 
   /* Resolve the geographic extent of features matching the active filter, ignoring the current viewport.
@@ -1314,7 +1343,7 @@ const _WFSLayer = L.Layer.extend({
       if (this._geo) { try { map.removeLayer(this._geo); } catch(_) {} this._geo = null; }
       const now = Date.now();
       if (!this._lastZoomWarn || now - this._lastZoomWarn > 5000) {
-        toastMsg('Zoom to level ' + this.options.minZoom + '+ to load features', 'warn');
+        toastMsg('Zoom in to load WFS features', 'warn', undefined, 'map-quiet');
         this._lastZoomWarn = now;
       }
       return;
@@ -1419,7 +1448,8 @@ const _WFSLayer = L.Layer.extend({
         const _hasFilter = this.options.filterAttr && this.options.filterVals;
         toastMsg(_hasFilter
           ? 'WFS: no features match filter — check attribute name and values'
-          : 'WFS: no features in current view', 'warn');
+          : 'WFS: no features in current view', 'warn', undefined, 'map-quiet');
+        try { this.fire('wfsupdate', { count: 0 }); } catch(_) {}
         return;
       }
       const prev = this._geo;
@@ -1504,6 +1534,7 @@ const _WFSLayer = L.Layer.extend({
           try { map.removeLayer(prev); } catch(_) {}
         }
         _selUpdateBadge();
+        try { this.fire('wfsupdate', { count: geojson.features.length }); } catch(_) {}
       } catch(_) {}
     };
 

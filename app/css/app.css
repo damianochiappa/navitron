@@ -151,6 +151,7 @@ html, body {
 
 /* ===== SIDEBAR ===== */
 #sidebar {
+  position: relative;
   width: var(--sidebar-w);
   background: var(--surface);
   border-right: 1px solid var(--border);
@@ -451,7 +452,16 @@ html, body {
   position: fixed;
   bottom: calc(var(--status-h) + 12px);
   left: 50%;
-  transform: translateX(-50%) translateY(18px);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 6px;
+  align-items: center;
+  z-index: 9999;
+  pointer-events: none;
+  transition: left .3s cubic-bezier(.4,0,.2,1);
+}
+.toast-item {
   background: var(--surface3);
   border: 1px solid var(--border);
   color: var(--text);
@@ -459,20 +469,48 @@ html, body {
   border-radius: 24px;
   font-size: 13px;
   font-weight: 500;
-  z-index: 9999;
   opacity: 0;
-  pointer-events: none;
+  transform: translateY(18px);
   transition: opacity .28s cubic-bezier(.4,0,.2,1), transform .28s cubic-bezier(.4,0,.2,1);
   box-shadow: 0 4px 20px rgba(0,0,0,.5);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   white-space: nowrap;
 }
-#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-#toast.success { border-color: var(--success); color: var(--success); background: rgba(76,175,125,.12); }
-#toast.error   { border-color: var(--danger);  color: var(--danger);  background: rgba(239,83,80,.12); }
-#toast.warn    { border-color: #f0a830;         color: #f0a830;        background: rgba(240,168,48,.12); }
-#toast.info    { border-color: var(--accent);   color: var(--accent);  background: rgba(91,156,246,.10); }
+.toast-item.show { opacity: 1; transform: translateY(0); }
+.toast-item.success { border-color: var(--success); color: var(--success); background: rgba(76,175,125,.12); }
+.toast-item.error   { border-color: var(--danger);  color: var(--danger);  background: rgba(239,83,80,.12); }
+.toast-item.warn    { border-color: #f0a830;         color: #f0a830;        background: rgba(240,168,48,.12); }
+.toast-item.info    { border-color: var(--accent);   color: var(--accent);  background: rgba(91,156,246,.10); }
+
+/* When sidebar is push-layout (landscape / tablet, min-width 641px), center map-scoped floaters
+   on the visible map area — not on the whole viewport — so they don't drift toward the sidebar.
+   Mobile portrait uses an overlay sidebar that hides the map, so no shift is applied there. */
+@media (min-width: 641px) {
+  #app.menu-open ~ #toast,
+  #app.menu-open #sel-badge,
+  #app.menu-open #kml-edit-bar {
+    left: calc(50% + var(--sidebar-w) / 2);
+  }
+}
+
+/* Sidebar-local toast stack: anchored to the sidebar bottom so messages produced by sidebar
+   interactions stay inside the sidebar. Hidden when the sidebar is collapsed (toastMsg drops
+   them anyway, but this keeps the host element from poking out during the collapse transition). */
+#toast-sidebar {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 6px;
+  align-items: center;
+  z-index: 50;
+  pointer-events: none;
+}
+#sidebar.collapsed #toast-sidebar { display: none; }
+#toast-sidebar .toast-item { white-space: normal; text-align: center; max-width: 100%; }
 
 /* Boost popup/tooltip pane z-index — leaflet-rotate per-pane transforms create stacking
    contexts that ignore z-index between siblings; DOM order + high z-index as double safety */
@@ -686,8 +724,11 @@ html, body {
 }
 .leaflet-draw-toolbar a.leaflet-draw-toolbar-button-enabled,
 .leaflet-edit-toolbar a.leaflet-draw-toolbar-button-enabled {
-  background-color: #005ce6 !important;
-  box-shadow: 0 0 10px rgba(0,150,255,.5) !important;
+  /* Pre-invert values: line 721 applies filter: invert(1) to Draw buttons, so we set the
+     complement here so the rendered highlight matches the blue #005ce6 used elsewhere
+     (e.g. .polyline-measure-controlOnBgColor below). */
+  background-color: #ffa319 !important;                /* invert(1) → #005ce6 blue */
+  box-shadow: 0 0 10px rgba(255,105,0,.5) !important;  /* invert(1) → rgba(0,150,255,.5) blue glow */
 }
 a.polyline-measure-controlOnBgColor,
 a.polyline-measure-controlOnBgColor:hover {
@@ -901,6 +942,7 @@ a.polyline-measure-controlOnBgColor:hover {
   position: absolute;
   bottom: 64px;
   left: 50%; transform: translateX(-50%);
+  transition: left .3s cubic-bezier(.4,0,.2,1);
   z-index: 810;
   display: flex; align-items: center; gap: 8px;
   background: rgba(16,22,36,0.95);
@@ -985,6 +1027,7 @@ a.polyline-measure-controlOnBgColor:hover {
 #kml-edit-bar {
   position: absolute; bottom: 108px;
   left: 50%; transform: translateX(-50%);
+  transition: left .3s cubic-bezier(.4,0,.2,1);
   z-index: 810;
   display: flex; flex-direction: column; align-items: center; gap: 3px;
   background: rgba(16,22,36,0.95);
@@ -1148,7 +1191,8 @@ a.polyline-measure-controlOnBgColor:hover {
 }
 
 /* ===== GPS CONTROL ===== */
-.leaflet-control-gps a, .leaflet-control-tools a, .leaflet-control-nav a, .leaflet-control-compass a {
+.leaflet-control-gps a, .leaflet-control-tools a, .leaflet-control-nav a, .leaflet-control-compass a,
+.leaflet-control-toggle a {
   font-size: 18px !important;
   display: flex !important;
   align-items: center;
@@ -1156,6 +1200,9 @@ a.polyline-measure-controlOnBgColor:hover {
   width: 40px !important;
   height: 40px !important;
 }
+/* Landscape-only collapsible headers: hidden in portrait. */
+.leaflet-control-toggle { display: none; }
+.leaflet-control-toggle a.toggle-on { background: #eaeaea !important; }
 .leaflet-control-gps a.gps-on {
   background: linear-gradient(135deg, #0066ff 0%, #00ccff 100%) !important;
   color: #fff !important;
@@ -1403,7 +1450,8 @@ a.polyline-measure-controlOnBgColor:hover {
   transition: transform 70ms, opacity 70ms;
 }
 
-/* Landscape corto: evita sovrapposizione tra colonna controlli top-right e bottom-right */
+/* Landscape corto: evita sovrapposizione tra colonna controlli top-right e bottom-right,
+   e riduce chrome+bottoni per non affollare l'altezza ridotta del phone ruotato. */
 @media (orientation: landscape) and (max-height: 500px) {
   .leaflet-control-container .leaflet-top.leaflet-right,
   .leaflet-control-container .leaflet-bottom.leaflet-right {
@@ -1414,7 +1462,87 @@ a.polyline-measure-controlOnBgColor:hover {
   .leaflet-control-gps,
   .leaflet-control-compass,
   .leaflet-control-nav {
-    margin-bottom: 2px !important;
+    margin-bottom: 1px !important;
   }
   .leaflet-control-attribution { font-size: 9px; padding: 1px 4px; }
+
+  /* Move the Leaflet control corners closer to map edges (10px default → 4px) to reclaim
+     precious vertical/horizontal space in rotated-phone view. */
+  .leaflet-control-container .leaflet-top    { top:    4px !important; }
+  .leaflet-control-container .leaflet-right  { right:  4px !important; }
+  .leaflet-control-container .leaflet-bottom { bottom: 4px !important; }
+  .leaflet-control-container .leaflet-left   { left:   4px !important; }
+
+  /* Compact chrome */
+  :root { --topbar-h: 42px; --status-h: 30px; }
+  #topbar { gap: 6px; padding: 0 10px; }
+  #statusbar .s-label { font-size: 8px; }
+  #statusbar .s-val { font-size: 10px; }
+
+  /* Compact buttons — overrides base .btn and the mobile-portrait override at max-width:640 */
+  .btn { padding: 6px 12px; font-size: 12px; min-height: 28px; }
+  .tab-btn { padding: 7px 3px; font-size: 8px; }
+  .mt-tab { padding: 6px 5px; font-size: 10px; }
+  .field label { font-size: 10px; }
+  .field input, .field select, .field textarea { padding: 6px 8px; font-size: 12px; }
+
+  /* Leaflet on-map controls (zoom bar, GPS, compass, nav): 40×40 → 30×30, font 18 → 13.
+     Overrides the base rules at .leaflet-bar a and .leaflet-control-gps/tools/nav/compass a. */
+  .leaflet-bar a,
+  .leaflet-control-gps a,
+  .leaflet-control-tools a,
+  .leaflet-control-nav a,
+  .leaflet-control-compass a,
+  .leaflet-control-toggle a {
+    width: 30px !important;
+    height: 30px !important;
+    line-height: 30px !important;
+    font-size: 13px !important;
+  }
+  /* Collapsible headers active only in landscape */
+  .leaflet-control-toggle { display: block; margin-bottom: 1px !important; }
+  /* Hide Draw + polylineMeasure stacks by default in landscape; toggle reveals them. */
+  #map .leaflet-draw,
+  #map .leaflet-polyline-measure { display: none !important; }
+  #map.draw-expanded .leaflet-draw {
+    display: flex !important;
+    flex-direction: column;
+    gap: 2px;
+    width: max-content;
+  }
+  #map.measure-expanded .leaflet-polyline-measure { display: block !important; }
+  /* Grid layout when expanded — keeps 30×30 icons (native sprite positions unchanged) and
+     lays them out horizontally so the column stays short.
+     Draw: 5-button draw toolbar + 1-button edit toolbar → 3-col grid = 2 rows for draw + 1 for edit.
+     Measure: 3 buttons → single row of 3. */
+  #map.draw-expanded .leaflet-draw-toolbar,
+  #map.measure-expanded .leaflet-polyline-measure {
+    display: grid !important;
+    grid-template-columns: repeat(3, 30px);
+    gap: 1px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    width: max-content;
+  }
+  #map.draw-expanded .leaflet-draw-toolbar a,
+  #map.measure-expanded .leaflet-polyline-measure a {
+    margin: 0 !important;
+  }
+  /* Force visible unicode/text labels on measure buttons (↦ × km/m) — the base landscape
+     shrink drops font-size to 13px, which makes the plugin's default 19px unicode-icon
+     look empty on Android WebView. Restore readable size + center align. Do NOT force
+     background-color or border, so the app's enabled-state highlight shows through
+     (measure: #005ce6 → blue; draw: #005ce6 passed through the invert(1) filter at
+     line 721 → renders as orange #ffa319 on screen). */
+  #map.measure-expanded .leaflet-polyline-measure a {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px !important;
+    font-weight: bold;
+    color: #000 !important;
+    line-height: 1 !important;
+    text-decoration: none !important;
+  }
 }

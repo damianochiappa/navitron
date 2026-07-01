@@ -111,7 +111,7 @@
     if (_hud) _hud.classList.add('hidden');
     document.getElementById('nav-start-btn').style.display = '';
     document.getElementById('nav-stop-btn').style.display  = 'none';
-    toastMsg('Navigation stopped', '');
+    toastMsg('Navigation stopped', '', undefined, 'sidebar');
   }
 
   /* ===== RESET NAVIGATION ===== */
@@ -120,7 +120,7 @@
     navDestLat = null; navDestLon = null;
     document.getElementById('nav-dest-input').value = '';
     _setStatus('', '');
-    toastMsg('Navigation reset', '');
+    toastMsg('Navigation reset', '', undefined, 'sidebar');
   }
 
   /* ===== OFF-ROUTE CHECK (called from map.js gpsUpdate) ===== */
@@ -208,7 +208,7 @@
     navPickMode = !navPickMode;
     pickBtn.classList.toggle('active', navPickMode);
     map.getContainer().style.cursor = navPickMode ? 'crosshair' : '';
-    if (navPickMode) toastMsg('Tap on map to set destination', '');
+    if (navPickMode) toastMsg('Tap on map to set destination', '', undefined, 'sidebar');
   });
 
   map.on('click', e => {

@@ -130,12 +130,12 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
   });
   item.querySelector('.layer-zoom').addEventListener('click', () => {
     const l = loadedLayers[id];
-    if (l._isOL) { toastMsg('Zoom not available for WMS overlay', 'warn'); return; }
+    if (l._isOL) { toastMsg('Zoom not available for WMS overlay', 'warn', undefined, 'sidebar'); return; }
     try {
       const b = _collectBounds(l);
       if (b && b.isValid()) map.fitBounds(b, { padding: [30,30], animate: true });
-      else toastMsg('Bounds not available', 'warn');
-    } catch(_) { toastMsg('Cannot calculate extent', 'error'); }
+      else toastMsg('Bounds not available', 'warn', undefined, 'sidebar');
+    } catch(_) { toastMsg('Cannot calculate extent', 'error', undefined, 'sidebar'); }
   });
   const opacitySlider = item.querySelector('.layer-opacity');
   const opacityLabel  = item.querySelector('.layer-opacity-val');
@@ -154,7 +154,7 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
         const stem = ((fname || baseName).trim() || baseName).replace(stripRe, '');
         downloadFile(rawContent, stem + ext, rawMime);
       });
-    } else { toastMsg('Original content not available', 'error'); }
+    } else { toastMsg('Original content not available', 'error', undefined, 'sidebar'); }
   });
   item.querySelector('.layer-del').addEventListener('click', () => {
     const l = loadedLayers[id];
@@ -234,7 +234,7 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
       const l = loadedLayers[id];
       if (!l || typeof l.findFilteredExtent !== 'function') return;
       if (!l.options.filterAttr || !l.options.filterVals) {
-        toastMsg('Set a filter first to find features', 'warn'); return;
+        toastMsg('Set a filter first to find features', 'warn', undefined, 'sidebar'); return;
       }
       const btn = item.querySelector('.layer-find');
       btn.disabled = true;
@@ -246,7 +246,7 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
           map.fitBounds(bounds, { padding: [40,40], animate: true, maxZoom: 19 });
           // After fitBounds, the bbox-bound refresh will pick up and render the matched features.
         } else {
-          toastMsg('Find: ' + (err || 'no result'), 'warn');
+          toastMsg('Find: ' + (err || 'no result'), 'warn', undefined, 'sidebar');
         }
       });
     });
@@ -261,7 +261,7 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
       if (bounds && bounds.isValid()) map.fitBounds(bounds, { padding: [20,20] });
     } catch(e) {}
   }
-  if (!opts.silent) toastMsg('Layer loaded: ' + name, 'success');
+  if (!opts.silent) toastMsg('Layer loaded: ' + name, 'success', undefined, 'sidebar');
 }
 
 /* ===== KML ENHANCE ===== */
@@ -433,7 +433,7 @@ function _addContentLayer(content, name, mime, listOpts) {
     if (parseErr) throw new Error('Invalid XML: ' + parseErr.textContent.substring(0, 80));
     const layer = new L.KML(kmlDoc);
     if ((layer.getLayers ? layer.getLayers().length : -1) === 0)
-      toastMsg('KML loaded but empty or without geometries: ' + name, '');
+      toastMsg('KML loaded but empty or without geometries: ' + name, '', undefined, 'sidebar');
     const propsArray = _extractPlacemarkProps(kmlDoc);
     enhanceKMLLayer(layer, propsArray, kmlDoc);
     addLayerToList(layer, name, content, mime, { ...listOpts, isKml: true });
@@ -492,7 +492,7 @@ function _restoreFileOverlays() {
       _removeOverlay(e.id);
     }
   });
-  if (list.length) toastMsg(list.length + ' overlay' + (list.length > 1 ? 's' : '') + ' restored', 'success');
+  if (list.length) toastMsg(list.length + ' overlay' + (list.length > 1 ? 's' : '') + ' restored', 'success', undefined, 'sidebar');
 }
 document.addEventListener('deviceready', _restoreFileOverlays, { once: true });
 setTimeout(_restoreFileOverlays, 350);
@@ -535,13 +535,13 @@ function loadFile(file) {
     file.arrayBuffer().then(buf => {
       return JSZip.loadAsync(buf).then(zip => {
         const kmlFiles = zip.file(/\.kml$/i);
-        if (!kmlFiles.length) { toastMsg('No KML in KMZ: ' + name, 'error'); return; }
+        if (!kmlFiles.length) { toastMsg('No KML in KMZ: ' + name, 'error', undefined, 'sidebar'); return; }
         const mainKml = kmlFiles.find(f => f.name.toLowerCase() === 'doc.kml') || kmlFiles[0];
         return mainKml.async('string').then(content => {
           _loadAndPersist(content, name.replace(/\.kmz$/i, '.kml'), 'application/vnd.google-earth.kml+xml');
         });
       });
-    }).catch(err => toastMsg('KMZ error: ' + (err.message || name), 'error'));
+    }).catch(err => toastMsg('KMZ error: ' + (err.message || name), 'error', undefined, 'sidebar'));
     return;
   }
 
@@ -551,17 +551,17 @@ function loadFile(file) {
     gpx: 'application/gpx+xml'
   };
   const mime = mimeMap[ext];
-  if (!mime) { toastMsg('Unsupported format: ' + ext, 'error'); return; }
+  if (!mime) { toastMsg('Unsupported format: ' + ext, 'error', undefined, 'sidebar'); return; }
 
   const reader = new FileReader();
-  reader.onerror = () => toastMsg('File read error: ' + name, 'error');
+  reader.onerror = () => toastMsg('File read error: ' + name, 'error', undefined, 'sidebar');
   reader.onload = ev => {
     const content = ev.target.result;
-    if (!content || content.length === 0) { toastMsg('Empty file: ' + name, 'error'); return; }
+    if (!content || content.length === 0) { toastMsg('Empty file: ' + name, 'error', undefined, 'sidebar'); return; }
     try {
       _loadAndPersist(content, name, mime);
     } catch(err) {
-      toastMsg('Error: ' + (err.message || name), 'error');
+      toastMsg('Error: ' + (err.message || name), 'error', undefined, 'sidebar');
       console.error('loadFile error:', err);
     }
   };
@@ -572,10 +572,10 @@ function loadFile(file) {
 let _kmlEditActive = null;
 
 function _startKmlEdit(origLayer, layerId, storeId) {
-  if (_kmlEditActive) { toastMsg('Finish current KML edit first', 'warn'); return; }
+  if (_kmlEditActive) { toastMsg('Finish current KML edit first', 'warn', undefined, 'sidebar'); return; }
 
   const leaves = _flattenKMLLeafLayers(origLayer);
-  if (!leaves.length) { toastMsg('No editable geometries', 'error'); return; }
+  if (!leaves.length) { toastMsg('No editable geometries', 'error', undefined, 'sidebar'); return; }
 
   const tempGroup = L.featureGroup();
   leaves.forEach(l => {
@@ -592,7 +592,7 @@ function _startKmlEdit(origLayer, layerId, storeId) {
     } catch(_) {}
   });
 
-  if (!tempGroup.getLayers().length) { toastMsg('No supported shapes to edit', 'error'); return; }
+  if (!tempGroup.getLayers().length) { toastMsg('No supported shapes to edit', 'error', undefined, 'sidebar'); return; }
 
   try { map.removeLayer(origLayer); } catch(_) {}
   tempGroup.addTo(map);
@@ -756,7 +756,7 @@ function _saveKmlEdit() {
   if (!features.length) {
     try { origLayer.addTo(map); } catch(_) {}
     loadedLayers[layerId] = origLayer;
-    toastMsg('No features — edit cancelled', 'warn');
+    toastMsg('No features — edit cancelled', 'warn', undefined, 'sidebar');
     return;
   }
 
@@ -779,11 +779,11 @@ function _saveKmlEdit() {
       const entry = list.find(e => e.id === storeId);
       if (entry) { entry.content = newKmlContent; _saveOverlayStore(list); }
     }
-    toastMsg('KML saved', 'success');
+    toastMsg('KML saved', 'success', undefined, 'sidebar');
   } catch(err) {
     try { origLayer.addTo(map); } catch(_) {}
     loadedLayers[layerId] = origLayer;
-    toastMsg('Save error: ' + (err.message || ''), 'error');
+    toastMsg('Save error: ' + (err.message || ''), 'error', undefined, 'sidebar');
   }
 }
 
@@ -797,7 +797,7 @@ function _cancelKmlEdit() {
   const bar = document.getElementById('kml-edit-bar');
   if (bar) bar.classList.add('hidden');
   _kmlEditActive = null;
-  toastMsg('Edit cancelled', '');
+  toastMsg('Edit cancelled', '', undefined, 'sidebar');
 }
 
 /* ===== DISSOLVE WIZARD ===== */
@@ -811,14 +811,14 @@ function _dissolveUpdateBtn() {
 
 function _startDissolve() {
   if (typeof turf === 'undefined') {
-    toastMsg('Turf.js not loaded — place turf.min.js in the app folder', 'error'); return;
+    toastMsg('Turf.js not loaded — place turf.min.js in the app folder', 'error', undefined, 'sidebar'); return;
   }
-  if (_kmlEditActive) { toastMsg('Finish KML edit first', 'warn'); return; }
+  if (_kmlEditActive) { toastMsg('Finish KML edit first', 'warn', undefined, 'sidebar'); return; }
 
   const kmlEntries = Object.entries(loadedLayers).filter(([, l]) =>
     l && !l._isOL && _flattenKMLLeafLayers(l).some(ll => ll instanceof L.Polygon)
   );
-  if (!kmlEntries.length) { toastMsg('No KML polygon layers loaded', 'warn'); return; }
+  if (!kmlEntries.length) { toastMsg('No KML polygon layers loaded', 'warn', undefined, 'sidebar'); return; }
 
   const list = document.getElementById('dissolve-picker-list');
   const picker = document.getElementById('dissolve-picker');
@@ -860,7 +860,7 @@ function _proceedDissolve() {
       try { const gj = l.toGeoJSON(); if (gj) features.push(gj); } catch(_) {}
     });
   });
-  if (!features.length) { toastMsg('No polygon features found in selected layers', 'error'); return; }
+  if (!features.length) { toastMsg('No polygon features found in selected layers', 'error', undefined, 'sidebar'); return; }
 
   const ok = document.getElementById('dissolve-ok');
   const wrap = document.getElementById('dissolve-progress-wrap');
@@ -887,14 +887,14 @@ function _proceedDissolve() {
       } catch(err) {
         if (wrap) wrap.classList.add('hidden');
         if (ok) { ok.disabled = false; ok.className = 'btn btn-success'; }
-        toastMsg('Dissolve error: ' + (err.message || ''), 'error'); return;
+        toastMsg('Dissolve error: ' + (err.message || ''), 'error', undefined, 'sidebar'); return;
       }
     }
 
     if (!result || !result.geometry) {
       if (wrap) wrap.classList.add('hidden');
       if (ok) { ok.disabled = false; ok.className = 'btn btn-success'; }
-      toastMsg('Dissolve failed', 'error'); return;
+      toastMsg('Dissolve failed', 'error', undefined, 'sidebar'); return;
     }
 
     if (fill) fill.style.width = '80%';
@@ -905,7 +905,7 @@ function _proceedDissolve() {
       if (!result || !result.geometry) {
         if (wrap) wrap.classList.add('hidden');
         if (ok) { ok.disabled = false; ok.className = 'btn btn-success'; }
-        toastMsg('Dissolve failed after simplify', 'error'); return;
+        toastMsg('Dissolve failed after simplify', 'error', undefined, 'sidebar'); return;
       }
       try {
         const coords = result.geometry.coordinates;
@@ -935,7 +935,7 @@ function _proceedDissolve() {
             const kmlContent = tokml({ type: 'FeatureCollection', features: [result] });
             _loadAndPersist(kmlContent, name + '.kml', 'application/vnd.google-earth.kml+xml');
             downloadFile(kmlContent, name + '.kml', 'application/vnd.google-earth.kml+xml');
-            toastMsg('Layer loaded: ' + name, 'success');
+            toastMsg('Layer loaded: ' + name, 'success', undefined, 'sidebar');
           };
           document.getElementById('dissolve-modal-cancel').onclick = () => {
             modal.classList.add('hidden');

@@ -227,19 +227,19 @@
 
   /* ===== MAIN FLOW: scan → download missing → register basemap ===== */
   async function _startDownload(kmlText, maxZoom, mapId, mapName) {
-    if (_downloading) { toastMsg('Operation already in progress', 'error'); return; }
+    if (_downloading) { toastMsg('Operation already in progress', 'error', undefined, 'sidebar'); return; }
 
     const bounds = _kmlBounds(kmlText);
-    if (!bounds || !bounds.isValid()) { toastMsg('Invalid KML: no valid coordinates found', 'error'); return; }
+    if (!bounds || !bounds.isValid()) { toastMsg('Invalid KML: no valid coordinates found', 'error', undefined, 'sidebar'); return; }
 
     const entry = BASEMAPS[mapId];
-    if (!entry) { toastMsg('Map not found', 'error'); return; }
+    if (!entry) { toastMsg('Map not found', 'error', undefined, 'sidebar'); return; }
     maxZoom = Math.min(maxZoom, (entry.options && entry.options.maxZoom) || 18, 18);
 
     const tosWarn = document.getElementById('offline-tos-warn');
     if (TOS_MAPS.includes(mapId)) {
       if (tosWarn) tosWarn.style.display = '';
-      toastMsg('\u26A0 Check service ToS before using offline tiles', 'error');
+      toastMsg('\u26A0 Check service ToS before using offline tiles', 'error', undefined, 'sidebar');
     } else {
       if (tosWarn) tosWarn.style.display = 'none';
     }
@@ -248,12 +248,12 @@
     const sizeMB = (total * AVG_TILE_KB) / 1024;
     const sizeGB = sizeMB / 1024;
     if (sizeGB > MAX_SIZE_GB) {
-      toastMsg('Area exceeds ' + MAX_SIZE_GB + ' GB limit. Reduce zoom or extent.', 'error');
+      toastMsg('Area exceeds ' + MAX_SIZE_GB + ' GB limit. Reduce zoom or extent.', 'error', undefined, 'sidebar');
       return;
     }
 
     const cache = await _openTileCache();
-    if (!cache) { toastMsg('Tile cache not available (SW not active)', 'error'); return; }
+    if (!cache) { toastMsg('Tile cache not available (SW not active)', 'error', undefined, 'sidebar'); return; }
 
     _downloading = true; _cancelled = false;
     _setProgress(0, total, true, 'Scanning');
@@ -278,7 +278,7 @@
           }
         }
       }
-      if (_cancelled) { toastMsg('Cancelled', ''); return; }
+      if (_cancelled) { toastMsg('Cancelled', '', undefined, 'sidebar'); return; }
       _setProgress(total, total, true, 'Scanning');
 
       const missing = total - found;
@@ -288,21 +288,21 @@
       toastMsg(
         found.toLocaleString() + '/' + total.toLocaleString() + ' tiles cached (' + pct + '%)' +
         (missing > 0 ? ' — downloading ' + missing.toLocaleString() + ' missing\u2026' : ''),
-        ''
+        '', undefined, 'sidebar'
       );
 
       /* ── Phase 2: download uncached tiles (all zoom levels 1..maxZoom) ── */
       if (missing > 0) {
         await _downloadMissing(bounds, maxZoom, mapId, cachedSet);
       }
-      if (_cancelled) { toastMsg('Cancelled', ''); return; }
+      if (_cancelled) { toastMsg('Cancelled', '', undefined, 'sidebar'); return; }
 
       /* ── Phase 3: register as offline basemap ── */
       _registerLayer(mapName, mapId, maxZoom);
-      toastMsg('Offline basemap ready: ' + mapName + ' (~' + sizeStr + ')', 'success');
+      toastMsg('Offline basemap ready: ' + mapName + ' (~' + sizeStr + ')', 'success', undefined, 'sidebar');
 
     } catch (e) {
-      toastMsg('Error: ' + e.message, 'error');
+      toastMsg('Error: ' + e.message, 'error', undefined, 'sidebar');
     } finally {
       _downloading = false;
       _setProgress(0, 0, false);
@@ -313,7 +313,7 @@
   function _registerLayer(name, sourceMapId, maxZoom) {
     const sourceEntry = BASEMAPS[sourceMapId];
     if (!sourceEntry || typeof sourceEntry.getTileUrl !== 'function') {
-      toastMsg('Cannot get tile URL for this map', 'error'); return;
+      toastMsg('Cannot get tile URL for this map', 'error', undefined, 'sidebar'); return;
     }
 
     // Use the raw Leaflet template URL (_url) so variable order is preserved
@@ -396,10 +396,10 @@
     _populateSelect();
 
     startBtn.addEventListener('click', async () => {
-      if (!_kmlText) { toastMsg('Select a KML file for the extent', 'error'); return; }
+      if (!_kmlText) { toastMsg('Select a KML file for the extent', 'error', undefined, 'sidebar'); return; }
       const zoom = parseInt(zoomInput ? zoomInput.value : '14');
-      if (isNaN(zoom) || zoom < 1 || zoom > 18) { toastMsg('Zoom must be between 1 and 18', 'error'); return; }
-      if (!mapSelect || !mapSelect.value) { toastMsg('Select a map', 'error'); return; }
+      if (isNaN(zoom) || zoom < 1 || zoom > 18) { toastMsg('Zoom must be between 1 and 18', 'error', undefined, 'sidebar'); return; }
+      if (!mapSelect || !mapSelect.value) { toastMsg('Select a map', 'error', undefined, 'sidebar'); return; }
       const rawName = mapSelect.options[mapSelect.selectedIndex].text;
       const safeName = rawName.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 40);
       await _startDownload(_kmlText, zoom, mapSelect.value, safeName);
@@ -419,8 +419,8 @@
     const clearBtn = document.getElementById('btn-offline-clear');
     if (clearBtn) {
       clearBtn.addEventListener('click', async () => {
-        if (_downloading) { toastMsg('Cannot clear while download is in progress', 'error'); return; }
-        if (!window.caches) { toastMsg('Cache API not available', 'error'); return; }
+        if (_downloading) { toastMsg('Cannot clear while download is in progress', 'error', undefined, 'sidebar'); return; }
+        if (!window.caches) { toastMsg('Cache API not available', 'error', undefined, 'sidebar'); return; }
         if (!confirm('Clear the entire tile cache? Offline basemaps will need to be re-downloaded.')) return;
         try {
           // Use storage.estimate() to report freed size without enumerating
@@ -430,7 +430,7 @@
           const est = navigator.storage && navigator.storage.estimate;
           const before = est ? ((await navigator.storage.estimate()).usage || 0) : 0;
           const ok = await caches.delete(TILE_CACHE_NAME);
-          if (!ok) { toastMsg('No cache to clear', ''); return; }
+          if (!ok) { toastMsg('No cache to clear', '', undefined, 'sidebar'); return; }
           let msg = 'Tile cache cleared';
           if (est) {
             const after = (await navigator.storage.estimate()).usage || 0;
@@ -440,9 +440,9 @@
               msg += ': ' + (mb >= 1024 ? (mb / 1024).toFixed(2) + ' GB' : mb.toFixed(0) + ' MB') + ' freed';
             }
           }
-          toastMsg(msg, 'success');
+          toastMsg(msg, 'success', undefined, 'sidebar');
         } catch (e) {
-          toastMsg('Error clearing cache: ' + e.message, 'error');
+          toastMsg('Error clearing cache: ' + e.message, 'error', undefined, 'sidebar');
         }
       });
     }

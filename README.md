@@ -5,9 +5,8 @@ Offline-capable GIS app for Android, built for fieldwork on Italian cadastral pa
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Download APK](https://img.shields.io/badge/Download-APK-brightgreen.svg)](https://github.com/damianochiappa/navitron/releases/latest)
 
-<p>
-  <img src="https://github.com/user-attachments/assets/b615fea0-fc5c-4655-8e4f-f18e5baec1f5" width="45%" alt="Navitron demo" />
-  <img src="Demo2.png" width="45%" alt="WFS Catasto with full layer stack" />
+<p align="center">
+  <img src="demo.gif" width="80%" alt="Navitron — Cadaster wizard workflow" />
 </p>
 
 ---
@@ -30,6 +29,7 @@ No build required — download and install the APK:
 
 - **WFS** — live vector features with filtering, style customization, selection export to KML; supports WFS 2.0 + legacy 1.x with GML 3.1.1, ISO-8859-1 encoding, MapServer `?map=...` endpoints; tested on Agenzia delle Entrate (INSPIRE), PCN (minambiente), IGM
 - **Catasto (Italy)** — WMS labels + WFS Parcels and Sheets (Agenzia delle Entrate INSPIRE) preloaded; PCN (minambiente) and IGM Italian WFS supported via "Add web map"
+- **Cadaster wizard (Italy)** — cascading dropdowns from region to sheet (foglio); optional parcel filter applied to the CadastralParcel layer, with automatic zoom and selection highlight
 - **Offline tile cache** — download any basemap within a KML boundary for offline use (Service Worker)
 - **KML/KMZ/GeoJSON/GPX import** — layer management, vertex editing, attribute popup, dissolve polygons (turf.js), rename, export
 - **Coordinate tools** — go-to by DD/DMS/UTM/MGRS, format converter, bookmarks

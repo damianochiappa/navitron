@@ -253,7 +253,7 @@ function layerToGeoJSON(layer) {
 /* ===== EXPORT ALL ===== */
 document.getElementById('btn-export-all-kml').addEventListener('click', () => {
   const layers = drawnItems.getLayers();
-  if (!layers.length) { toastMsg('No shapes to export', 'error'); return; }
+  if (!layers.length) { toastMsg('No shapes to export', 'error', undefined, 'sidebar'); return; }
   showPromptModal('File name (no extension):', 'drawings', fname => {
     const base = ((fname || 'drawings').trim() || 'drawings').replace(/\.kml$/i, '');
     const features = layers.map(l => {
@@ -270,7 +270,7 @@ document.getElementById('btn-export-all-kml').addEventListener('click', () => {
 
 document.getElementById('btn-export-all-geojson').addEventListener('click', () => {
   const layers = drawnItems.getLayers();
-  if (!layers.length) { toastMsg('No shapes to export', 'error'); return; }
+  if (!layers.length) { toastMsg('No shapes to export', 'error', undefined, 'sidebar'); return; }
   showPromptModal('File name (no extension):', 'drawings', fname => {
     fname = ((fname || 'drawings').trim() || 'drawings').replace(/\.geojson$/i, '').replace(/\.json$/i, '');
     const features = layers.map(l => {
@@ -299,8 +299,8 @@ document.getElementById('import-geojson-input').addEventListener('change', funct
   const reader = new FileReader();
   reader.onload = function (e) {
     let fc;
-    try { fc = JSON.parse(e.target.result); } catch (_) { toastMsg('Invalid JSON file', 'error'); return; }
-    if (!fc || !Array.isArray(fc.features)) { toastMsg('Not a valid GeoJSON FeatureCollection', 'error'); return; }
+    try { fc = JSON.parse(e.target.result); } catch (_) { toastMsg('Invalid JSON file', 'error', undefined, 'sidebar'); return; }
+    if (!fc || !Array.isArray(fc.features)) { toastMsg('Not a valid GeoJSON FeatureCollection', 'error', undefined, 'sidebar'); return; }
     let imported = 0;
 
     // Expand Multi* types into individual simple geometries
@@ -358,21 +358,21 @@ document.getElementById('import-geojson-input').addEventListener('change', funct
     if (imported) {
       _saveDraws();
       updateDrawStats();
-      toastMsg('Imported ' + imported + ' shape' + (imported > 1 ? 's' : ''), 'success');
+      toastMsg('Imported ' + imported + ' shape' + (imported > 1 ? 's' : ''), 'success', undefined, 'sidebar');
     } else {
-      toastMsg('No compatible shapes found', 'error');
+      toastMsg('No compatible shapes found', 'error', undefined, 'sidebar');
     }
   };
   reader.readAsText(file);
 });
 
 document.getElementById('btn-clear-draw').addEventListener('click', () => {
-  if (!drawnItems.getLayers().length) { toastMsg('No shapes present', ''); return; }
+  if (!drawnItems.getLayers().length) { toastMsg('No shapes present', '', undefined, 'sidebar'); return; }
   if (confirm('Are you sure? All drawings will be lost.')) {
     drawnItems.clearLayers();
     _saveDraws();
     updateDrawStats();
-    toastMsg('Drawings cleared', '');
+    toastMsg('Drawings cleared', '', undefined, 'sidebar');
   }
 });
 
@@ -407,7 +407,7 @@ function updateTrack(ll, alt, ts) {
 }
 
 function exportGPX() {
-  if (!trackPoints.length) { toastMsg('No points in track', 'error'); return; }
+  if (!trackPoints.length) { toastMsg('No points in track', 'error', undefined, 'sidebar'); return; }
   const pts = trackPoints.map(p =>
     `    <trkpt lat="${p.lat}" lon="${p.lng}">` +
     (p.alt != null ? `<ele>${p.alt.toFixed(1)}</ele>` : '') +
@@ -422,7 +422,7 @@ function exportGPX() {
 
 document.getElementById('btn-track-toggle').addEventListener('click', () => {
   const btn = document.getElementById('btn-track-toggle');
-  if (!trackActive && !gpsActive) { toastMsg('Enable GPS first', 'error'); return; }
+  if (!trackActive && !gpsActive) { toastMsg('Enable GPS first', 'error', undefined, 'sidebar'); return; }
   trackActive = !trackActive;
   if (trackActive) {
     btn.innerHTML = '<span class="track-rec-dot"></span>Stop track';
@@ -431,7 +431,7 @@ document.getElementById('btn-track-toggle').addEventListener('click', () => {
     document.getElementById('btn-track-export').style.display     = 'none';
     document.getElementById('btn-track-export-kml').style.display  = 'none';
     document.getElementById('btn-track-clear').style.display       = 'none';
-    toastMsg('Track recording started', 'success');
+    toastMsg('Track recording started', 'success', undefined, 'sidebar');
   } else {
     btn.innerHTML = '\u25B6 Start track'; btn.style.background = '';
     // Hide bearing statusbar item — it stays frozen on last value otherwise
@@ -444,7 +444,7 @@ document.getElementById('btn-track-toggle').addEventListener('click', () => {
       const hasAlt = trackPoints.length >= 2 && trackPoints.some(p => p.alt != null);
       document.getElementById('btn-track-profile').style.display = hasAlt ? 'block' : 'none';
     }
-    toastMsg('Track stopped \u2014 ' + trackPoints.length + ' points', 'success');
+    toastMsg('Track stopped \u2014 ' + trackPoints.length + ' points', 'success', undefined, 'sidebar');
     // Offer to save the recorded polyline as an editable shape (cancel = keep existing track preview)
     if (trackPoints.length >= 2) {
       // Snapshot points now — if the user re-starts recording while the prompt
@@ -480,14 +480,14 @@ document.getElementById('btn-track-toggle').addEventListener('click', () => {
           document.getElementById('btn-track-profile').style.display    = 'none';
           document.getElementById('btn-track-clear').style.display      = 'none';
         }
-        toastMsg('Track saved as shape: ' + nm, 'success');
+        toastMsg('Track saved as shape: ' + nm, 'success', undefined, 'sidebar');
       });
     }
   }
 });
 
 function exportKML() {
-  if (!trackPoints.length) { toastMsg('No points in track', 'error'); return; }
+  if (!trackPoints.length) { toastMsg('No points in track', 'error', undefined, 'sidebar'); return; }
   const coords = trackPoints.map(p =>
     p.lng.toFixed(6) + ',' + p.lat.toFixed(6) + (p.alt != null ? ',' + p.alt.toFixed(1) : ',0')
   ).join(' ');
@@ -515,7 +515,7 @@ document.getElementById('btn-track-clear').addEventListener('click', () => {
   document.getElementById('btn-track-clear').style.display      = 'none';
   const brgItem = document.getElementById('sb-brg-item');
   if (brgItem) brgItem.style.display = 'none';
-  toastMsg('Track cleared', '');
+  toastMsg('Track cleared', '', undefined, 'sidebar');
 });
 
 /* ===== AUTO-SAVE / AUTO-LOAD DRAWINGS ===== */
@@ -539,7 +539,7 @@ function _saveDraws() {
   try { localStorage.setItem('navitron_draws', JSON.stringify(fc)); }
   catch (err) {
     console.error('saveDraws failed:', err);
-    toastMsg('Drawings save failed: ' + (err.message || 'storage error'), 'error');
+    toastMsg('Drawings save failed: ' + (err.message || 'storage error'), 'error', undefined, 'sidebar');
   }
 }
 
@@ -586,17 +586,17 @@ function _loadDraws() {
       drawnItems.addLayer(layer);
     });
     updateDrawStats();
-    if (fc.features.length) toastMsg('Drawings restored (' + fc.features.length + ')', 'success');
+    if (fc.features.length) toastMsg('Drawings restored (' + fc.features.length + ')', 'success', undefined, 'sidebar');
   } catch (err) {
     console.error('loadDraws failed:', err);
-    toastMsg('Drawings restore failed: ' + (err.message || 'corrupted data'), 'error');
+    toastMsg('Drawings restore failed: ' + (err.message || 'corrupted data'), 'error', undefined, 'sidebar');
   }
 }
 
 /* ===== ELEVATION PROFILE ===== */
 function _showElevProfile() {
   const pts = trackPoints.filter(p => p.alt != null);
-  if (pts.length < 2) { toastMsg('No altitude data in track', 'error'); return; }
+  if (pts.length < 2) { toastMsg('No altitude data in track', 'error', undefined, 'sidebar'); return; }
 
   // Cumulative distance for each point
   let dist = 0;
