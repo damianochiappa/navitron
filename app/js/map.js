@@ -1390,9 +1390,17 @@ const _WFSLayer = L.Layer.extend({
         }
         return v.toLowerCase();
       });
+      // Case-insensitive key lookup: OL's WFS/GML readers may normalize element local names
+      // (e.g. INSPIRE canonical camelCase) so an exact-case match on filterAttr misses.
+      const _fAttrLc = _fAttr.toLowerCase();
+      const _lookupProp = props => {
+        if (props[_fAttr] != null) return props[_fAttr];
+        for (const k in props) if (k.toLowerCase() === _fAttrLc) return props[k];
+        return null;
+      };
       _clientFilter = props => {
         if (!props) return false;
-        const raw = props[_fAttr];
+        const raw = _lookupProp(props);
         if (raw == null || raw === '') return false;
         const sv = String(raw).toLowerCase();
         return _matchers.some(m => m instanceof RegExp ? m.test(sv) : sv === m);

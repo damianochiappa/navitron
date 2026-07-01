@@ -335,6 +335,83 @@
     return dedup;
   }
 
+  // Tile-based parcel lookup. AE silent-zeros GetFeature when the bbox trips an internal
+  // threshold (empirical: ~1200+ features in the response) — the sheet bbox alone can exceed
+  // it, so fitBounds(sheet) + a single WFS fetch reports "no matching" even when the parcel
+  // exists. Fix: tile the sheet at ~1 km² (well under the threshold), fetch parcels in
+  // parallel, early-exit once every target ref is found. Returns the union bbox of matched
+  // parcels or null when none of the targets exist.
+  async function findParcelsBBox(sheet, targetRefs) {
+    if (!sheet || !sheet.bbox || !targetRefs || !targetRefs.length) return null;
+    const remaining = new Set(targetRefs);
+    let unionBBox = null;
+    let firstErr = null;
+    let allFound = false;
+    const [ss, sw, sn, se] = sheet.bbox;
+    const LAT_STEP = 0.01; // ~1.1 km — safely below AE silent-zero threshold
+    const midLat = (ss + sn) / 2;
+    const lonStep = LAT_STEP / Math.max(0.1, Math.cos(midLat * Math.PI / 180));
+    const tiles = [];
+    for (let s = ss; s < sn; s += LAT_STEP) {
+      const n = Math.min(s + LAT_STEP, sn);
+      for (let w = sw; w < se; w += lonStep) {
+        const e = Math.min(w + lonStep, se);
+        tiles.push([s, w, n, e]);
+      }
+    }
+    const CONCURRENCY = 4;
+    let nextIdx = 0;
+    const merge = bb => {
+      if (!unionBBox) unionBBox = bb.slice();
+      else {
+        unionBBox[0] = Math.min(unionBBox[0], bb[0]);
+        unionBBox[1] = Math.min(unionBBox[1], bb[1]);
+        unionBBox[2] = Math.max(unionBBox[2], bb[2]);
+        unionBBox[3] = Math.max(unionBBox[3], bb[3]);
+      }
+    };
+    const runWorker = async () => {
+      while (true) {
+        if (allFound || firstErr) return;
+        const idx = nextIdx++;
+        if (idx >= tiles.length) return;
+        const [s, w, n, e] = tiles[idx];
+        const bboxParam =
+          s.toFixed(6) + ',' + w.toFixed(6) + ',' + n.toFixed(6) + ',' + e.toFixed(6) +
+          ',urn:ogc:def:crs:EPSG::6706';
+        const url = CADASTER_WFS +
+          '?service=WFS&version=2.0.0&request=GetFeature' +
+          '&typeNames=' + encodeURIComponent(PARCEL_TYPENAME) +
+          '&srsName=' + encodeURIComponent('urn:ogc:def:crs:EPSG::6706') +
+          '&bbox=' + encodeURIComponent(bboxParam) +
+          '&count=20000';
+        try {
+          const doc = await fetchXml(url);
+          if (allFound || firstErr) return;
+          const feats = doc.getElementsByTagNameNS('*', 'CadastralParcel');
+          for (let i = 0; i < feats.length; i++) {
+            const ref = textOf(feats[i], 'NATIONALCADASTRALREFERENCE') ||
+                        textOf(feats[i], 'nationalCadastralReference');
+            if (ref && remaining.has(ref)) {
+              const bb = bboxFromFeature(feats[i], true);
+              if (bb) merge(bb);
+              remaining.delete(ref);
+              if (remaining.size === 0) { allFound = true; return; }
+            }
+          }
+        } catch (err) {
+          if (!firstErr) firstErr = err;
+          return;
+        }
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, tiles.length) }, () => runWorker())
+    );
+    if (firstErr && !unionBBox) throw firstErr;
+    return unionBBox;
+  }
+
   /* ===== Layer access (typeName-based, immune to UI renames) ===== */
 
   function findLayerByTypeName(typeName) {
@@ -490,11 +567,11 @@
     // Filter by NATIONALCADASTRALREFERENCE (sheetRef.parcelLabel) instead of plain LABEL: parcel
     // labels are unique only within a sheet, so a bare label match collides across adjacent sheets
     // in the bbox. Fallback to LABEL when sheet.ref is missing (e.g. legacy cached sheets).
+    let targetRefs = null;
     if (parcelText && sheet && sheet.ref) {
-      const composed = parcelText.split(',')
-        .map(p => p.trim()).filter(Boolean)
-        .map(p => sheet.ref + '.' + p).join(',');
-      parcelLayer.setFilter('NATIONALCADASTRALREFERENCE', composed);
+      targetRefs = parcelText.split(',').map(p => p.trim()).filter(Boolean)
+        .map(p => sheet.ref + '.' + p);
+      parcelLayer.setFilter('NATIONALCADASTRALREFERENCE', targetRefs.join(','));
     } else {
       parcelLayer.setFilter('label', parcelText || '');
     }
@@ -508,9 +585,49 @@
     // script on the page but NOT exposed on `window` (top-level const/let aren't).
     const mapRef = (typeof map !== 'undefined') ? map : null;
     if (!mapRef || !sheet || !sheet.bbox) { _done(); return; }
-    // Step 1 — fitBounds on sheet bbox. Clamp to >=14 (usable scale floor); when filtering, we also
-    // lower the parcel layer's minZoom to 14 so _update doesn't skip the fetch on large sheets.
-    if (parcelText && parcelLayer.options) parcelLayer.options.minZoom = 14;
+    // Fast path: no parcel filter → fitBounds(sheet) + clamp to 14, no selection wait.
+    if (!parcelText) {
+      const [s, w, n, e] = sheet.bbox;
+      try {
+        mapRef.fitBounds([[s, w], [n, e]], { padding: [30, 30], animate: true });
+        if (mapRef.getZoom() < 14 && mapRef.getMaxZoom() >= 14) mapRef.setZoom(14);
+      } catch (err) {
+        if (window.console) console.warn('cadaster fitBounds (sheet) failed', err);
+      }
+      setStatus('Zoomed to sheet ' + (sheet.label || ''), false);
+      _done(); return;
+    }
+    // Filtering path — lower parcel layer's minZoom to 14 so subsequent _update fires at the
+    // parcel-tight zoom regardless of the original layer config.
+    if (parcelLayer.options) parcelLayer.options.minZoom = 14;
+    // Ref-based flow: tile-based prefetch resolves the parcel bbox up front so the WFS layer's
+    // own fetch runs on a small viewport (immune to AE's silent-zero on wide bboxes). If none of
+    // the target refs exist we short-circuit to "no matching" without waiting for the layer.
+    if (targetRefs) {
+      setStatus('Locating parcels\u2026', false);
+      findParcelsBBox(sheet, targetRefs).then(bb => {
+        if (myGen !== _wizardGen) return;
+        if (!bb) {
+          setStatus('No parcels matching "' + parcelText + '" in sheet ' + (sheet.label || ''), true);
+          _done(); return;
+        }
+        try {
+          mapRef.fitBounds([[bb[0], bb[1]], [bb[2], bb[3]]], { padding: [60, 60], animate: false });
+          if (mapRef.getZoom() < 17 && mapRef.getMaxZoom() >= 17) mapRef.setZoom(17, { animate: false });
+        } catch (err) {
+          if (window.console) console.warn('cadaster fitBounds (parcel prefetch) failed', err);
+        }
+        setStatus('Loading parcels\u2026', false);
+        _awaitParcelWfsUpdate();
+      }).catch(err => {
+        if (myGen !== _wizardGen) return;
+        if (window.console) console.warn('cadaster parcel prefetch failed', err);
+        setStatus('Failed to locate parcel: ' + (err && err.message || err), true);
+        _done();
+      });
+      return;
+    }
+    // Legacy label-only fallback (sheet.ref missing): keep the old sheet-fitBounds behavior.
     const [s, w, n, e] = sheet.bbox;
     try {
       mapRef.fitBounds([[s, w], [n, e]], { padding: [30, 30], animate: true });
@@ -518,12 +635,10 @@
     } catch (err) {
       if (window.console) console.warn('cadaster fitBounds (sheet) failed', err);
     }
-    // Fast path: no parcel filter → no selection, no wait.
-    if (!parcelText) {
-      setStatus('Zoomed to sheet ' + (sheet.label || ''), false);
-      _done(); return;
-    }
     setStatus('Loading parcels\u2026', false);
+    _awaitParcelWfsUpdate();
+    return;
+    function _awaitParcelWfsUpdate() {
     // Step 2 — wait for the WFS layer's next 'wfsupdate' (fired by _render in map.js on both
     // success and zero-feature paths). Safety timeout 30s in case of network failure (the layer
     // toasts its own error already).
@@ -542,20 +657,30 @@
       const selB = computeSelBounds();
       if (selB && selB.isValid && selB.isValid()) {
         try {
-          mapRef.fitBounds(selB, { padding: [30, 30], maxZoom: mapRef.getMaxZoom(), animate: true });
-          if (mapRef.getZoom() < 15 && mapRef.getMaxZoom() >= 15) mapRef.setZoom(15);
+          mapRef.fitBounds(selB, { padding: [30, 30], maxZoom: mapRef.getMaxZoom(), animate: false });
+          if (mapRef.getZoom() < 15 && mapRef.getMaxZoom() >= 15) mapRef.setZoom(15, { animate: false });
         } catch (err) {
           if (window.console) console.warn('cadaster fitBounds (selection) failed', err);
         }
-        // Rebind _selLayers after the refetch triggered by fit/setZoom moveend.
-        mapRef.once('moveend', () => {
+        // Rebind _selLayers after the refetch's _render rebuilds _geo. wfsupdate fires at the
+        // end of _render, so binding here guarantees new layer instances (moveend would fire
+        // before the refetch and bind against the stale _geo).
+        parcelLayer.once('wfsupdate', () => {
           if (myGen !== _wizardGen) return;
           rebindStaleSelLayers(parcelLayer);
         });
       }
       _done();
     };
+    // fitBounds/setZoom above ran with animate:false — map.getBounds() already reflects the
+    // parcel-tight target synchronously by the time we get here. Kill any stale scheduled fetch
+    // (including the one queued by the layer's persistent moveend→_schedule listener firing on
+    // the sync moveend), invalidate any in-flight response via _reqId bump, then schedule a
+    // fresh fetch. No moveend gating or fallback timer needed.
+    try { clearTimeout(parcelLayer._timer); } catch(_) {}
+    parcelLayer._reqId = (parcelLayer._reqId || 0) + 1;
     parcelLayer.once('wfsupdate', onUpdate);
+    parcelLayer._schedule();
     timer = setTimeout(() => {
       timer = null;
       try { parcelLayer.off('wfsupdate', onUpdate); } catch(_) {}
@@ -563,6 +688,7 @@
       setStatus('Timed out waiting for cadaster data', true);
       _done();
     }, SAFETY_MS);
+    }
   }
 
   function resetCadasterFilter() {
