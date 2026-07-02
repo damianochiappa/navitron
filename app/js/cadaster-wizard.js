@@ -562,6 +562,14 @@
       if (typeof toastMsg === 'function') toastMsg('Catasto Particelle layer not configured', 'error', undefined, 'sidebar');
       _done(); return;
     }
+    // Wildcards would slip past the WFS layer's client-side matcher but findParcelsBBox does
+    // exact-set membership on NATIONALCADASTRALREFERENCE, so any '*' or '?' short-circuits to
+    // "no matches". Reject up front and point the user at the manual WFS filter, which does
+    // support wildcards on this layer.
+    if (parcelText && /[*?]/.test(parcelText)) {
+      setStatus('Wildcards are not supported here — use the layer filter on Catasto Particelle', true);
+      _done(); return;
+    }
     clearWizardSelection();
     const hadFilter = !!(parcelLayer.options.filterAttr && parcelLayer.options.filterVals);
     // Filter by NATIONALCADASTRALREFERENCE (sheetRef.parcelLabel) instead of plain LABEL: parcel
