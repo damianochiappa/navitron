@@ -1,7 +1,7 @@
 ---
 title: "Navitron — App GIS per il catasto italiano: WFS particelle, offline, KML"
 description: "App Android open source per il catasto italiano: interrogazione WFS delle particelle catastali dell'Agenzia delle Entrate (INSPIRE), ricerca per comune / foglio / particella, cache tile offline, import ed export KML/GPX/GeoJSON. Cordova, build on-device con Termux."
-image: /navitron/catasto-particelle-wfs.png
+image: /catasto-particelle-wfs.png
 ---
 
 # Navitron GIS
