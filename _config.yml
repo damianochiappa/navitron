@@ -2,6 +2,7 @@ title: Navitron GIS
 description: Android GIS app with WFS vector cadastre support and offline tile cache, built for fieldwork on Italian cadastral parcels (Cordova, Termux on-device build).
 url: https://damianochiappa.github.io
 baseurl: /navitron
+lang: it_IT
 
 plugins:
   - jekyll-sitemap

@@ -1,0 +1,72 @@
+---
+title: "Navitron — App GIS per il catasto italiano: WFS particelle, offline, KML"
+description: "App Android open source per il catasto italiano: interrogazione WFS delle particelle catastali dell'Agenzia delle Entrate (INSPIRE), ricerca per comune / foglio / particella, cache tile offline, import ed export KML/GPX/GeoJSON. Cordova, build on-device con Termux."
+image: /navitron/catasto-particelle-wfs.png
+---
+
+# Navitron GIS
+
+App Android **open source per il catasto italiano**, pensata per il lavoro sul campo: geometri, agronomi (PAC/AGEA), tecnici. Permette l'**interrogazione WFS delle particelle catastali dell'Agenzia delle Entrate** (dati INSPIRE), la **ricerca per comune, foglio e particella**, la **cache delle mappe per l'uso offline** e l'**import/export di KML, KMZ, GeoJSON e GPX**. Distribuita come APK tramite Apache Cordova; costruita e testata interamente on-device con Termux + proot-distro.
+
+<small><em>Open-source Android GIS app for the Italian cadastre — WFS parcel query (Agenzia delle Entrate / INSPIRE), search by municipality / sheet / parcel, offline tile cache, KML export.</em></small>
+
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Download APK](https://img.shields.io/badge/Download-APK-brightgreen.svg)](https://github.com/damianochiappa/navitron/releases/latest)
+
+<p align="center">
+  <img src="demo.gif" width="80%" alt="Navitron — wizard catasto: ricerca delle particelle per comune, foglio e particella con zoom automatico" />
+</p>
+
+<p align="center">
+  <img src="catasto-particelle-wfs.png" width="45%" alt="Interrogazione WFS delle particelle catastali (layer Catasto Particelle, Agenzia delle Entrate) con edificio selezionato ed export in KML" />
+  <img src="mappa-igm-coordinate.png" width="45%" alt="Mappa Navitron su cartografia IGM con lettura coordinate UTM e MGRS" />
+</p>
+
+---
+
+## Installazione
+
+Nessuna compilazione richiesta — scarica e installa l'APK:
+
+1. Apri l'**[ultima Release](https://github.com/damianochiappa/navitron/releases/latest)** e scarica `Navitron.apk`
+2. Sul telefono, consenti l'*installazione da origini sconosciute* per il browser o il file manager che usi
+3. Apri il file scaricato e conferma l'installazione
+
+**Requisiti:** Android 10+.
+
+> Navitron è sideloaded, non è sul Play Store. Android mostrerà un avviso "origini sconosciute": è previsto.
+
+---
+
+## Funzionalità
+
+- **WFS** — interrogazione live di feature vettoriali con filtri, stile personalizzabile, export della selezione in KML; supporta WFS 2.0 e legacy 1.x con GML 3.1.1, encoding ISO-8859-1, endpoint MapServer `?map=...`; testato su Agenzia delle Entrate (INSPIRE), PCN (minambiente), IGM
+- **Catasto (Italia)** — etichette WMS + WFS di particelle e fogli (Agenzia delle Entrate INSPIRE) precaricati; PCN (minambiente) e IGM supportati via "Add web map"
+- **Wizard catasto (Italia)** — menu a tendina a cascata da regione a foglio; filtro opzionale sulla particella applicato al layer CadastralParcel, con zoom automatico ed evidenziazione della selezione
+- **Cache tile offline** — scarica una qualsiasi basemap entro un confine KML per l'uso offline (Service Worker)
+- **Import KML/KMZ/GeoJSON/GPX** — gestione layer, editing dei vertici, popup degli attributi, dissolve dei poligoni (turf.js), rinomina, export
+- **Strumenti coordinate** — vai-a per DD/DMS/UTM/MGRS, convertitore di formato, segnaposti
+- **Mappe** — OpenTopoMap, OpenStreetMap, ESRI (Satellite, Topo, NatGeo), Stadia Satellite, CartoDB; layer WMS/WMTS/ArcGIS personalizzati con controllo opacità
+- **GPS** — posizione in tempo reale, cerchio di accuratezza, coordinate UTM/MGRS, quota del terreno (Open-Meteo); rilevamento automatico modalità volo (soglia AGL)
+- **Navigazione** — routing OSRM (auto, bici, a piedi); rotazione mappa heading-up con freccia di direzione; rilevamento fuori-rotta e ricalcolo automatico; HUD velocità/distanza/ETA; cono di visuale a piedi
+- **Registrazione tracce** — traccia GPS con statistiche; grafico del profilo altimetrico; export in GPX o KML
+- **Disegno e misura** — marker, polilinee, poligoni, cerchi; misura polilinee; calcolo distanze/aree
+- **ArcGIS Online** — autenticazione a token per servizi protetti
+
+---
+
+## Compilazione dai sorgenti
+
+Per contribuire e compilare dai sorgenti (build on-device con Termux + proot-distro), vedi le istruzioni complete nel **[README del repository](https://github.com/damianochiappa/navitron#build-from-source-advanced-optional)**.
+
+---
+
+## Licenza
+
+Copyright (C) 2026 Damiano Chiappa — rilasciato sotto **GPL v3**. Vedi [LICENSE](https://github.com/damianochiappa/navitron/blob/main/LICENSE).
+
+Il progetto è GPL v3 perché usa [leaflet-rotate](https://github.com/Raruto/leaflet-rotate) (GPL v3). Tutte le altre librerie di terze parti sono MIT, BSD-2 o Apache-2.0 — vedi [NOTICES](https://github.com/damianochiappa/navitron/blob/main/NOTICES) e [THIRD-PARTY-NOTICES.md](https://github.com/damianochiappa/navitron/blob/main/THIRD-PARTY-NOTICES.md).
+
+---
+
+**Repository:** [github.com/damianochiappa/navitron](https://github.com/damianochiappa/navitron)
