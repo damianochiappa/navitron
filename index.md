@@ -70,3 +70,24 @@ Il progetto è GPL v3 perché usa [leaflet-rotate](https://github.com/Raruto/lea
 ---
 
 **Repository:** [github.com/damianochiappa/navitron](https://github.com/damianochiappa/navitron)
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "MobileApplication",
+  "name": "Navitron GIS",
+  "operatingSystem": "Android 10+",
+  "applicationCategory": "Maps & Navigation",
+  "applicationSubCategory": "GIS",
+  "description": "App Android open source per il catasto italiano: interrogazione WFS delle particelle catastali dell'Agenzia delle Entrate (INSPIRE), ricerca per comune / foglio / particella, cache tile offline, export KML.",
+  "url": "https://damianochiappa.github.io/navitron/",
+  "downloadUrl": "https://github.com/damianochiappa/navitron/releases/latest",
+  "image": "https://damianochiappa.github.io/navitron/catasto-particelle-wfs.png",
+  "screenshot": [
+    "https://damianochiappa.github.io/navitron/catasto-particelle-wfs.png",
+    "https://damianochiappa.github.io/navitron/mappa-igm-coordinate.png"
+  ],
+  "license": "https://www.gnu.org/licenses/gpl-3.0",
+  "author": { "@type": "Person", "name": "Damiano Chiappa" }
+}
+</script>
