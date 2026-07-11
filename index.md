@@ -63,9 +63,9 @@ Nessuna compilazione richiesta — scarica e installa l'APK:
 - **Import KML/KMZ/GeoJSON/GPX** — gestione layer, editing dei vertici, popup degli attributi, dissolve dei poligoni (turf.js), rinomina, export
 - **Strumenti coordinate** — vai-a per DD/DMS/UTM/MGRS, convertitore di formato, segnaposti
 - **Mappe** — OpenTopoMap, OpenStreetMap, ESRI (Satellite, Topo, NatGeo), Stadia Satellite, CartoDB; layer WMS/WMTS/ArcGIS personalizzati con controllo opacità
-- **GPS** — posizione in tempo reale, cerchio di accuratezza, coordinate UTM/MGRS, quota del terreno (Open-Meteo); rilevamento automatico modalità volo (soglia AGL)
+- **GPS** — posizione in tempo reale, cerchio di accuratezza, coordinate UTM/MGRS, quota del terreno (Open-Meteo)
 - **Navigazione** — routing OSRM (auto, bici, a piedi); rotazione mappa heading-up con freccia di direzione; rilevamento fuori-rotta e ricalcolo automatico; HUD velocità/distanza/ETA; cono di visuale a piedi
-- **Registrazione tracce** — traccia GPS con statistiche; grafico del profilo altimetrico; export in GPX o KML
+- **Registrazione tracce** — traccia GPS con statistiche; export in GPX o KML
 - **Disegno e misura** — marker, polilinee, poligoni, cerchi; misura polilinee; calcolo distanze/aree
 - **ArcGIS Online** — autenticazione a token per servizi protetti
 
