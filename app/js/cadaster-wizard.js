@@ -258,8 +258,7 @@
         tiles.push([s, w, n, e]);
       }
     }
-    const seen = {};
-    const dedup = [];
+    const rawZones = [];
     const total = tiles.length;
     setStatus('Loading sheets for ' + comune.name + ' (0/' + total + ')\u2026');
     // Concurrent workers pull from a shared index. JS single-threaded merges into seen/dedup are
@@ -290,25 +289,18 @@
           tileCount = feats.length;
           for (let i = 0; i < feats.length; i++) {
             const label = textOf(feats[i], 'label') || textOf(feats[i], 'LABEL');
-            // ref = NATIONALCADASTRALZONINGREFERENCE (e.g. H501A049300). Parcels carry it as
-            // the prefix of NATIONALCADASTRALREFERENCE (e.g. H501A048700.111), so we use it to
-            // build a sheet-scoped, collision-free parcel filter.
+            // ref = NATIONALCADASTRALZONINGREFERENCE (e.g. L229_004900). Parcels carry it as
+            // the prefix of NATIONALCADASTRALREFERENCE, so we use it to build a sheet-scoped,
+            // collision-free parcel filter.
             const ref = textOf(feats[i], 'NATIONALCADASTRALZONINGREFERENCE') ||
                         textOf(feats[i], 'nationalCadastralZoningReference');
+            // ADMINISTRATIVEUNIT = comune Belfiore code. Used post-loop to drop neighbouring
+            // comuni that bleed into this comune's rectangular bbox and reuse foglio numbers.
+            const au = textOf(feats[i], 'ADMINISTRATIVEUNIT') ||
+                       textOf(feats[i], 'administrativeUnit');
             const bbox = bboxFromFeature(feats[i], true);
             if (!label || !bbox) continue;
-            if (seen[label]) {
-              const ex = seen[label];
-              if (ref && !ex.ref) ex.ref = ref;
-              ex.bbox[0] = Math.min(ex.bbox[0], bbox[0]);
-              ex.bbox[1] = Math.min(ex.bbox[1], bbox[1]);
-              ex.bbox[2] = Math.max(ex.bbox[2], bbox[2]);
-              ex.bbox[3] = Math.max(ex.bbox[3], bbox[3]);
-            } else {
-              const sh = { label, ref: ref || '', bbox: bbox.slice() };
-              seen[label] = sh;
-              dedup.push(sh);
-            }
+            rawZones.push({ label, ref: ref || '', au: au || '', bbox });
           }
         } catch (err) {
           if (window.console) console.warn('cadaster sheet tile fetch failed', s, w, n, e, err);
@@ -325,6 +317,50 @@
       Array.from({ length: Math.min(CONCURRENCY, tiles.length) }, () => runWorker())
     );
     if (firstErr) throw firstErr;
+
+    // Scope sheets to the target comune. The comune bbox is rectangular, so tiles bleed into
+    // adjacent comuni that reuse the same foglio numbers (e.g. two neighbours both have "8"),
+    // and the endpoint has no server-side attribute filter (bbox-only, verified). Filter
+    // client-side by ADMINISTRATIVEUNIT: the target comune fills its own bbox so it owns the
+    // most distinct fogli, while neighbours appear only in edge slivers. Fall back to no
+    // scoping if the attribute is absent (older server variants) to avoid an empty list.
+    const byAU = {};
+    for (const z of rawZones) {
+      if (!z.au) continue;
+      (byAU[z.au] || (byAU[z.au] = new Set())).add(z.label);
+    }
+    let targetAU = null;
+    const auCodes = Object.keys(byAU);
+    if (auCodes.length) {
+      const cLat = (cs + cn) / 2, cLon = (cw + ce) / 2;
+      const coversCentroid = au => rawZones.some(z => z.au === au &&
+        z.bbox[0] <= cLat && cLat <= z.bbox[2] && z.bbox[1] <= cLon && cLon <= z.bbox[3]);
+      auCodes.sort((a, b) => {
+        const d = byAU[b].size - byAU[a].size;            // most distinct fogli wins
+        if (d) return d;
+        const ca = coversCentroid(a), cb = coversCentroid(b);
+        if (ca !== cb) return (cb ? 1 : 0) - (ca ? 1 : 0); // tie-break: zone over comune centre
+        return a.localeCompare(b);                         // deterministic final tie-break
+      });
+      targetAU = auCodes[0];
+    }
+
+    const seen = {};
+    const dedup = [];
+    for (const z of rawZones) {
+      if (targetAU && z.au !== targetAU) continue;         // drop neighbouring comuni
+      if (seen[z.label]) {
+        const ex = seen[z.label];
+        if (z.ref && !ex.ref) ex.ref = z.ref;
+        ex.bbox[0] = Math.min(ex.bbox[0], z.bbox[0]);
+        ex.bbox[1] = Math.min(ex.bbox[1], z.bbox[1]);
+        ex.bbox[2] = Math.max(ex.bbox[2], z.bbox[2]);
+        ex.bbox[3] = Math.max(ex.bbox[3], z.bbox[3]);
+      } else {
+        seen[z.label] = { label: z.label, ref: z.ref || '', bbox: z.bbox.slice() };
+        dedup.push(seen[z.label]);
+      }
+    }
     dedup.sort((a, b) => {
       const na = parseInt(a.label, 10), nb = parseInt(b.label, 10);
       if (isFinite(na) && isFinite(nb)) return na - nb;
@@ -827,7 +863,7 @@
       const parcel = (parcelIn.value || '').trim();
       const _origText = goBtn.textContent;
       goBtn.disabled = true;
-      if (parcel) goBtn.textContent = 'Loading\u2026';
+      goBtn.textContent = 'Loading\u2026';
       applyCadasterFilter(_selectedSheet, parcel, () => {
         goBtn.textContent = _origText;
         updateGoEnabled();
