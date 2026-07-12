@@ -329,7 +329,10 @@ function gpsUpdate(pos) {
     gpsMarker = L.marker(ll, { icon: _makeAirplaneIcon(pos.coords.heading), zIndexOffset: 1000 })
       .addTo(map).bindPopup(gpsDiv, { maxWidth: 260 });
   } else if (!_isFlying && typeof navIsActive === 'function' && navIsActive() && _smoothBearing != null && _navProfMarker !== 'walking') {
-    gpsMarker = L.marker(ll, { icon: _makeNavArrowIcon(_smoothBearing), zIndexOffset: 1000 })
+    // Marker icons are screen-fixed (leaflet-rotate rotateWithView:false), while the map
+    // is rotated track-up via setBearing(-_smoothBearing). Add the current map bearing so the
+    // arrow points along travel instead of double-counting the heading.
+    gpsMarker = L.marker(ll, { icon: _makeNavArrowIcon(_smoothBearing + map.getBearing()), zIndexOffset: 1000 })
       .addTo(map).bindPopup(gpsDiv, { maxWidth: 260 });
   } else {
     gpsMarker = L.circleMarker(ll, { radius: 8, color: '#4f8ef7', fillColor: '#fff', fillOpacity: 1, weight: 3 })

@@ -19,6 +19,8 @@ No build required — download and install the APK:
 2. On your phone, allow *Install from unknown sources* for the browser or file manager you use
 3. Open the downloaded file and confirm installation
 
+To update, just install the latest release over the existing one: the app updates in place — no uninstall needed — and your saved settings (maps, added web maps, offline cache) are kept.
+
 **Requirements:** Android 10+.
 
 > Navitron is sideloaded, not on the Play Store. Android will show an "unknown sources" warning — this is expected.

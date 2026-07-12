@@ -358,6 +358,11 @@
     if (kmlInput) {
       kmlInput.addEventListener('change', function () {
         const f = this.files[0]; if (!f) return;
+        const ext = f.name.split('.').pop().toLowerCase();
+        if (ext !== 'kml' && ext !== 'kmz') {
+          toastMsg('Select a .kml or .kmz file for the extent', 'error', undefined, 'sidebar');
+          this.value = ''; return;
+        }
         if (kmlName) kmlName.textContent = f.name;
         const reader = new FileReader();
         reader.onload = e => { _kmlText = e.target.result; };

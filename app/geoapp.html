@@ -330,7 +330,8 @@
               </svg>
               <p>Drag or click to upload</p>
               <small>KML &middot; KMZ &middot; GeoJSON &middot; GPX</small>
-              <input type="file" id="file-input" accept=".kml,.kmz,.geojson,.json,.gpx" multiple style="display:none">
+              <!-- accept="*/*": Android SAF pickers filter by MIME, not extension, and grey out .kml/.gpx/.geojson on some devices. Extension is validated in loadFile(). -->
+              <input type="file" id="file-input" accept="*/*" multiple style="display:none">
             </div>
           </div>
         </div>
@@ -492,7 +493,8 @@
               <label class="btn btn-secondary btn-full" style="cursor:pointer;font-size:11px;padding:8px 12px">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                 Select KML extent
-                <input type="file" id="offline-kml-input" accept=".kml,.kmz" style="display:none">
+                <!-- accept="*/*": see #file-input; extension is validated in the change handler. -->
+                <input type="file" id="offline-kml-input" accept="*/*" style="display:none">
               </label>
               <span class="hint" id="offline-kml-name" style="font-size:10px;margin-top:2px"></span>
             </div>
@@ -952,7 +954,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">1.8.7</span></div>
+      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">1.8.8</span></div>
       <div class="about-row"><span class="lbl">Author</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">License</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — Open Source</a></span></div>
       <div class="about-row"><span class="lbl">Engine</span><span class="val">Leaflet · Cordova · Android</span></div>

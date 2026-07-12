@@ -26,11 +26,11 @@ App Android **open source per il catasto italiano**, pensata per il lavoro sul c
 
 Navitron ti aiuta a trovare i confini di un terreno partendo dai dati catastali — comune, foglio e particella — e a individuarlo sulla mappa satellitare. Con il GPS raggiungi la particella sul posto e ti orienti tra confini, fabbricati, strade e corsi d'acqua, anche senza connessione grazie alle mappe salvate per l'uso offline.
 
-I dati catastali dell'Agenzia delle Entrate — particelle e fogli — sono già preconfigurati e pronti all'uso. Catasto e altri tematismi si sovrappongono alla mappa di sfondo che preferisci — satellitare, topografica o stradale — e di ogni livello puoi regolarne l'opacità (e il colore, per i livelli vettoriali come le particelle catastali) per confrontarlo con il terreno sottostante. Puoi aggiungere altri livelli cartografici indicandone l'indirizzo una sola volta: restano salvati e si ricaricano agli avvii successivi. Sono supportati servizi pubblici come la cartografia INSPIRE di IGM e Geoportale Nazionale e — con le relative credenziali — i servizi ArcGIS/ESRI della tua organizzazione, nei formati WMS, WFS, WMTS/XYZ e ArcGIS MapServer.
+I dati del Catasto Terreni dell'Agenzia delle Entrate — particelle e fogli — sono già preconfigurati e pronti all'uso (il Catasto Fabbricati non è incluso). Catasto e altri tematismi si sovrappongono alla mappa di sfondo che preferisci — satellitare, topografica o stradale — e di ogni livello puoi regolarne l'opacità (e il colore, per i livelli vettoriali come le particelle catastali) per confrontarlo con il terreno sottostante. Puoi aggiungere altri livelli cartografici indicandone l'indirizzo una sola volta: restano salvati e si ricaricano agli avvii successivi. Sono supportati servizi pubblici come la cartografia INSPIRE di IGM e Geoportale Nazionale e — con le relative credenziali — i servizi ArcGIS/ESRI della tua organizzazione, nei formati WMS, WFS, WMTS/XYZ e ArcGIS MapServer.
 
 **Per chi è pensato**
 
-- **Proprietari** — trovi i confini di un terreno o di una casa che possiedi o hai ereditato partendo dagli estremi catastali, anche senza conoscere la zona.
+- **Proprietari** — trovi i confini di un terreno che possiedi o hai ereditato partendo dagli estremi catastali, anche senza conoscere la zona.
 - **Agricoltura** — individui i tuoi campi, ne verifichi i confini prima delle lavorazioni e prepari le pratiche PAC/AGEA esportando le particelle in KML o GPX.
 - **Geometri, periti e tecnici** — sopralluoghi e consultazione catastale sul campo: ricerca per comune, foglio e particella, sovrapposizione di più livelli, lettura e conversione delle coordinate (DD, DMS, UTM, MGRS), modifica dei vertici.
 - **Fotovoltaico, agrivoltaico ed eolico** — individui rapidamente le particelle di interesse per valutare terreni adatti agli impianti da fonti rinnovabili.
@@ -48,6 +48,8 @@ Nessuna compilazione richiesta — scarica e installa l'APK:
 2. Sul telefono, consenti l'*installazione da origini sconosciute* per il browser o il file manager che usi
 3. Apri il file scaricato e conferma l'installazione
 
+Per aggiornare, installa la release più recente sopra quella esistente: l'app si aggiorna **senza disinstallare** e **senza perdere le impostazioni** (mappe, web map aggiunte, cache offline).
+
 **Requisiti:** Android 10+.
 
 > Navitron è sideloaded, non è sul Play Store. Android mostrerà un avviso "origini sconosciute": è previsto.
@@ -57,7 +59,7 @@ Nessuna compilazione richiesta — scarica e installa l'APK:
 ## Funzionalità
 
 - **WFS** — interrogazione live di feature vettoriali con filtri, stile personalizzabile, export della selezione in KML; supporta WFS 2.0 e legacy 1.x con GML 3.1.1, encoding ISO-8859-1, endpoint MapServer `?map=...`; testato su Agenzia delle Entrate (INSPIRE), PCN (minambiente), IGM
-- **Catasto (Italia)** — etichette WMS + WFS di particelle e fogli (Agenzia delle Entrate INSPIRE) precaricati; PCN (minambiente) e IGM supportati via "Add web map"
+- **Catasto (Italia)** — etichette WMS + WFS di particelle e fogli del Catasto Terreni (Agenzia delle Entrate INSPIRE) precaricati; il Catasto Fabbricati non è incluso. PCN (minambiente) e IGM supportati via "Add web map"
 - **Wizard catasto (Italia)** — menu a tendina a cascata da regione a foglio; filtro opzionale sulla particella applicato al layer CadastralParcel, con zoom automatico ed evidenziazione della selezione
 - **Cache tile offline** — scarica una qualsiasi basemap entro un confine KML per l'uso offline (Service Worker)
 - **Import KML/KMZ/GeoJSON/GPX** — gestione layer, editing dei vertici, popup degli attributi, dissolve dei poligoni (turf.js), rinomina, export
