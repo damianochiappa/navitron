@@ -404,7 +404,7 @@
               <div id="dissolve-picker-list" style="margin-bottom:8px"></div>
               <div style="display:flex;gap:8px;margin-bottom:8px">
                 <button class="btn btn-secondary" id="dissolve-ok" style="flex:1" disabled>&#10003; Dissolve selected</button>
-                <button class="btn btn-secondary" id="dissolve-cancel">&#10005;</button>
+                <button class="btn btn-secondary" id="dissolve-cancel" title="Cancel">&#10005;</button>
               </div>
               <div id="dissolve-progress-wrap" class="hidden">
                 <div class="offline-progress-bg"><div class="offline-progress-fill" id="dissolve-progress-fill"></div></div>
@@ -467,7 +467,7 @@
           </div>
           <div class="card-body" style="padding:8px">
             <div id="bookmark-list">
-              <p class="bookmark-empty">No bookmarks saved</p>
+              <p class="bookmark-empty">No bookmarks yet — tap "Bookmark current view" below, or long-press the map to save a spot.</p>
             </div>
           </div>
         </div>
@@ -487,7 +487,7 @@
             Tile cache
           </div>
           <div class="card-body">
-            <p class="hint">Tiles viewed on the map are cached automatically (max 4 GB, oldest evicted first). To create an offline basemap: select a KML area, a max zoom level and a map, then tap the button — missing tiles are downloaded and the basemap is registered for offline use.</p>
+            <p class="hint">Tiles viewed on the map are cached automatically. When the cache reaches its 4 GB limit the app asks before freeing space, so nothing is deleted without your consent. To create an offline basemap: select a KML area, a max zoom level and a map, then tap the button — missing tiles are downloaded and the basemap is registered for offline use.</p>
             <div class="field">
               <label>Area extent (KML file)</label>
               <label class="btn btn-secondary btn-full" style="cursor:pointer;font-size:11px;padding:8px 12px">
@@ -507,7 +507,7 @@
               <select id="offline-map-select"></select>
             </div>
             <div id="offline-tos-warn" class="offline-tos-warn" style="display:none">
-              &#9888; This service prohibits bulk tile download per its Terms of Service. Proceed only for personal/testing use.
+              &#9888; This service prohibits bulk tile download per its Terms of Service. Proceed only for personal, non-commercial use.
             </div>
             <div id="offline-progress-section" style="display:none;margin-top:4px">
               <div class="offline-progress-bg"><div class="offline-progress-fill" id="offline-progress-fill"></div></div>
@@ -660,11 +660,14 @@
 
             <div class="guide-section">
               <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Tile cache</h4>
-              <div class="guide-item"><span class="guide-key">Auto-cache</span><span class="guide-desc">Every tile you view is cached automatically — up to 4 GB, then oldest are replaced</span></div>
-              <div class="guide-item"><span class="guide-key">Cache tab</span><span class="guide-desc">Select KML extent + max zoom + map → tap "Convert cache to map": scans cache, downloads all missing tiles (zoom 1 to max), registers offline basemap</span></div>
-              <div class="guide-item"><span class="guide-key">Offline basemap</span><span class="guide-desc">Appears in basemap list — serves all zoom levels from cache, no internet needed</span></div>
+              <div class="guide-item"><span class="guide-key">Auto-cache</span><span class="guide-desc">Every tile you view is cached automatically as you browse (the "volatile" cache), separate from your saved offline basemaps</span></div>
+              <div class="guide-item"><span class="guide-key">Cache full (4 GB)</span><span class="guide-desc">At the 4 GB limit a prompt asks before freeing space — nothing is deleted without your OK. If your offline maps are under 3.5 GB, OK clears only the browsing tiles and keeps your offline maps. Cancel reminds you at the next app start</span></div>
+              <div class="guide-item"><span class="guide-key">Offline maps saturating</span><span class="guide-desc">If your saved offline maps reach 3.5 GB, the prompt instead offers to trim the oldest offline tiles down to 2.5 GB (~1 GB freed; maps stay listed, with gaps). Frequent prompts? Remove a whole map with its ✕</span></div>
+              <div class="guide-item"><span class="guide-key">Older install</span><span class="guide-desc">Offline maps saved by a previous version use an older format; at 4 GB the app offers a one-time clean-up (re-download needed) so storage stays fast. Postponing keeps it slower and re-asks next launch</span></div>
+              <div class="guide-item"><span class="guide-key">Cache tab</span><span class="guide-desc">Select KML extent + max zoom + map → tap "Convert cache to map": scans cache, downloads all missing tiles (zoom 1 to max), registers offline basemap in its own protected cache</span></div>
+              <div class="guide-item"><span class="guide-key">Offline basemap</span><span class="guide-desc">Appears in basemap list — serves all zoom levels from its cache, no internet needed. Remove it with ✕ (deletes its downloaded tiles too)</span></div>
               <div class="guide-item"><span class="guide-key">Cancel</span><span class="guide-desc">Stops the download mid-way; tiles already fetched remain in cache</span></div>
-              <div class="guide-item"><span class="guide-key">Clear tile cache</span><span class="guide-desc">Wipes all cached tiles (no other app data is touched). Offline basemaps already registered will need to be re-downloaded</span></div>
+              <div class="guide-item"><span class="guide-key">Clear tile cache</span><span class="guide-desc">Wipes ALL cached tiles — browsing cache and every saved offline basemap (no other app data is touched). Offline basemaps must be downloaded again</span></div>
             </div>
 
             <div class="guide-section">
@@ -688,7 +691,7 @@
         <span class="mt-grip" title="Drag">&#8942;&#8942;</span>
         <button class="mt-tab active" data-mt="goto">Go to</button>
         <button class="mt-tab" data-mt="convert">Convert</button>
-        <button class="mt-close" id="map-tools-close">&#10005;</button>
+        <button class="mt-close" id="map-tools-close" title="Close">&#10005;</button>
       </div>
       <div class="mt-panel active" id="mt-goto">
         <div class="field" style="position:relative">
@@ -725,7 +728,7 @@
       <div class="mt-header nav-drag-header">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:10px;flex-shrink:0;color:var(--accent)"><polygon points="3,11 22,2 13,21 11,13 3,11"/></svg>
         <span style="flex:1;padding:9px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">Navigate</span>
-        <button class="mt-close" id="nav-close">&#8722;</button>
+        <button class="mt-close" id="nav-close" title="Minimize">&#8722;</button>
       </div>
       <div style="padding:10px;display:flex;flex-direction:column;gap:8px">
         <div class="field">
@@ -788,8 +791,8 @@
     <div id="sel-badge" class="hidden">
       <button id="sel-mode-btn" title="Click-to-select mode">&#x25CE; Select</button>
       <span id="sel-badge-count" style="display:none"></span>
-      <button id="sel-badge-export" style="display:none">&#11015; KML</button>
-      <button id="sel-badge-close" style="display:none">&#10005;</button>
+      <button id="sel-badge-export" style="display:none" title="Export selected features as KML to Downloads">&#11015; KML</button>
+      <button id="sel-badge-close" style="display:none" title="Clear all selections">&#10005;</button>
     </div>
 
     <!-- KML EDIT BAR -->
@@ -954,7 +957,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">1.8.9</span></div>
+      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">1.9.2</span></div>
       <div class="about-row"><span class="lbl">Author</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">License</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — Open Source</a></span></div>
       <div class="about-row"><span class="lbl">Engine</span><span class="val">Leaflet · Cordova · Android</span></div>
@@ -1077,34 +1080,194 @@ if ('serviceWorker' in navigator) {
   } catch(_) {}
 })();
 
-/* Cache-full warning: notify the user when origin storage usage exceeds a
-   threshold, so they can hit "Clear cache" in the Offline panel before tile
-   fetches start failing (which was the root cause of the "connection to
-   https://localhost unsuccessful" startup dialog). Read-only check via
-   navigator.storage.estimate() — no SW message, no fetch interception, no
-   touch to safe-mode logic above. Throttled to at most once per hour. */
-window.addEventListener('load', function nvCacheWarnInit() {
-  const THRESHOLD = 0.85;
-  const FIRST_CHECK_MS = 10 * 1000;
+/* Cache-full consent prompt. When tile storage reaches its 4 GB budget (or the
+   device storage is nearly full), ask before freeing anything — freeing is no
+   longer silent (the old inline Service-Worker eviction stalled rendering) and
+   never touches a saved offline basemap by surprise.
+
+   Two caches exist: the VOLATILE cache (navitron-tiles-v1, tiles seen while
+   browsing) and one dedicated cache per saved offline basemap
+   (navitron-offline-*). Which action the prompt offers depends on WHERE the
+   space is going, sized from each basemap's tracked cfg.tiles count (no cache
+   enumeration → no UI freeze):
+     • Legacy branch — an offline map entry exists with NO dedicated cache (its
+       tiles are still mixed into the volatile cache, from a pre-refactor
+       version). Offer a one-time storage re-alignment: OK wipes the volatile
+       cache and drops the legacy entries (re-download needed); Cancel warns
+       that performance stays degraded and re-asks next launch.
+     • Phase 1 (offline maps < 3.5 GB) → the browsing tiles are the problem. OK
+       wipes the whole volatile cache (instant: one caches.delete); offline maps
+       are kept. If wiping doesn't clear the over-condition we stop nagging.
+     • Phase 2 (offline maps ≥ 3.5 GB) → the offline maps are the problem. OK
+       trims the oldest offline tiles down to 2.5 GB (~1 GB), oldest basemap
+       first; the maps stay listed but show gaps until re-downloaded.
+   Cancel defers for the session; the prompt returns at the next app start while
+   still over the limit.
+
+   The trigger uses navigator.storage.estimate() (cheap, read-only). It is a
+   privacy-quantized approximation, so it enforces the budget without ever being
+   an exact byte count. If estimate() is unavailable we do nothing (as before)
+   rather than enumerate caches on a timer. */
+window.addEventListener('load', function nvCacheFullInit() {
+  if (!window.caches || !navigator.storage || !navigator.storage.estimate) return;
+
+  const GB              = 1024 * 1024 * 1024;
+  const LIMIT_BYTES     = 4 * GB;         // prompt when tile storage reaches 4 GB
+  const FULL_RATIO      = 0.90;           // also prompt if origin usage ≥ 90% of quota
+  const OFFLINE_LIMIT   = 3.5 * GB;       // offline maps above this → Phase 2 (keeps volatile headroom)
+  const OFFLINE_TARGET  = 2.5 * GB;       // Phase 2 trims offline maps down to this
+  const AVG_TILE        = 15 * 1024;      // nominal tile size (bytes) for size/count estimates
+  const VOLATILE_CACHE  = 'navitron-tiles-v1';
+  const OFFLINE_PREFIX  = 'navitron-offline-';
+  const FIRST_CHECK_MS  = 10 * 1000;
   const CHECK_INTERVAL_MS = 5 * 60 * 1000;
-  const SPAM_INTERVAL_MS = 60 * 60 * 1000;
-  const LS_KEY = 'nv_cache_warn_last';
-  if (!navigator.storage || !navigator.storage.estimate) return;
-  async function check() {
+
+  let _busy = false, _prompting = false;
+  // Per-session defer: a fresh page load (app restart) resets it, so a
+  // dismissed prompt reappears next launch while still over the limit.
+  let _deferred = false;
+  const toast = (m, t, d) => { if (typeof toastMsg === 'function') toastMsg(m, t || '', d); };
+
+  async function estimate() {
     try {
-      const est = await navigator.storage.estimate();
-      if (!est.quota || !est.usage) return;
-      const ratio = est.usage / est.quota;
-      if (ratio < THRESHOLD) return;
-      let last = 0;
-      try { last = parseInt(localStorage.getItem(LS_KEY) || '0', 10); } catch(_) {}
-      if (Date.now() - last < SPAM_INTERVAL_MS) return;
-      if (typeof toastMsg !== 'function') return;
-      const pct = Math.round(ratio * 100);
-      toastMsg('Cache nearly full (' + pct + '%). Open the Offline panel and tap "Clear cache" to free space.', 'error', 8000);
-      try { localStorage.setItem(LS_KEY, String(Date.now())); } catch(_) {}
+      const e = await navigator.storage.estimate();
+      if (e && e.usage) return { usage: e.usage, quota: e.quota || 0 };
+    } catch(_) {}
+    return null;
+  }
+  function isOver(m) {
+    return m.usage >= LIMIT_BYTES || (m.quota > 0 && (m.usage / m.quota) >= FULL_RATIO);
+  }
+  function offlineCfgs() {
+    return (typeof customMapConfigs !== 'undefined' ? customMapConfigs : []).filter(c => c && c.offline);
+  }
+  // Names of existing dedicated offline caches (cheap: names only, no tiles).
+  async function offlineCacheNames() {
+    try { return (await caches.keys()).filter(n => n.startsWith(OFFLINE_PREFIX)); } catch(_) { return []; }
+  }
+  // Oldest first — the id timestamp (offline_<ts>) is embedded in the name.
+  function sortByAge(names) {
+    return names
+      .map(n => ({ name: n, id: n.slice(OFFLINE_PREFIX.length), ts: parseInt((n.split('_').pop() || '0'), 10) || 0 }))
+      .sort((a, b) => a.ts - b.ts);
+  }
+  function notifySW() {
+    try {
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'offlineChanged' });
+      }
     } catch(_) {}
   }
+  function decCfgTiles(id, n) {
+    try {
+      if (typeof customMapConfigs === 'undefined') return;
+      const cfg = customMapConfigs.find(c => c.id === id);
+      if (cfg) cfg.tiles = Math.max(0, (cfg.tiles || 0) - n);
+      if (typeof _autoSaveConfig === 'function') _autoSaveConfig();
+    } catch(_) {}
+  }
+
+  /* Phase 1: wipe every tile NOT in a saved offline basemap. Instant (one delete). */
+  async function wipeVolatile() {
+    try { return await caches.delete(VOLATILE_CACHE); } catch(_) { return false; }
+  }
+
+  /* Phase 2: delete the oldest offline tiles (oldest basemap first, oldest tile
+     first within it) — count-based on the tracked cfg.tiles so it needs no cache
+     enumeration. Decrements cfg.tiles as it goes. Entries stay in the list
+     (gaps until re-downloaded). */
+  async function freeOldestOffline(tilesToFree) {
+    let remaining = Math.max(0, tilesToFree | 0);
+    let total = 0;
+    for (const { name, id } of sortByAge(await offlineCacheNames())) {
+      if (remaining <= 0) break;
+      let c, keys;
+      try { c = await caches.open(name); keys = await c.keys(); } catch(_) { continue; }
+      let del = 0;
+      for (let i = 0; i < keys.length && remaining > 0; i++) {
+        try { await c.delete(keys[i]); del++; remaining--; } catch(_) {}
+      }
+      if (del) { decCfgTiles(id, del); total += del; }
+    }
+    if (total) notifySW();
+    return total;
+  }
+
+  async function handleOver(m) {
+    _busy = true;
+    try {
+      const names = await offlineCacheNames();
+      const nameSet = new Set(names);
+      const cfgs = offlineCfgs();
+
+      // ── Legacy branch: offline maps saved by an older version have no dedicated
+      //    cache (their tiles are mixed into the volatile cache). Offer a one-time
+      //    storage re-alignment before the normal prompts.
+      const legacy = cfgs.filter(c => !nameSet.has(OFFLINE_PREFIX + c.id));
+      if (legacy.length) {
+        _prompting = true;
+        const ok = confirm(
+          'Some of your saved maps use an older storage format that can slow the app down.\n\n' +
+          'Tap OK to clean it up now — your offline map areas will need to be downloaded again, but the app will run faster and manage space better.\n\n' +
+          'Tap Cancel to do it later: the app may stay slow, and we’ll ask again the next time you open it.'
+        );
+        _prompting = false;
+        if (!ok) { _deferred = true; return; }
+        await wipeVolatile();
+        legacy.forEach(c => { if (typeof window._nvPurgeOffline === 'function') window._nvPurgeOffline(c.id); });
+        notifySW();
+        toast('Old cache cleared — re-download your offline maps to save them', 'success', 6000);
+        return;
+      }
+
+      // Size the offline maps from tracked tile counts — no enumeration, no freeze.
+      let offlineTiles = 0;
+      cfgs.forEach(c => { if (nameSet.has(OFFLINE_PREFIX + c.id)) offlineTiles += (c.tiles || 0); });
+      const phase2 = (offlineTiles * AVG_TILE) >= OFFLINE_LIMIT;
+
+      _prompting = true;
+      let ok;
+      if (!phase2) {
+        ok = confirm(
+          'The map cache is full (4 GB).\n\n' +
+          'Tap OK to free space and keep things fast — this clears only the tiles saved automatically while browsing; your downloaded offline maps are kept.\n\n' +
+          'Tap Cancel to decide later (we’ll remind you next time you open the app).\n\n' +
+          'Seeing this often? Your offline maps may be taking the space — remove one with its ✕, or clear everything from the Cache tab.'
+        );
+      } else {
+        ok = confirm(
+          'Your downloaded offline maps have filled the storage (4 GB).\n\n' +
+          'Tap OK to remove about 1 GB of the oldest offline tiles — the maps stay in your list, but some areas may need downloading again.\n\n' +
+          'Tap Cancel to keep them for now (we’ll remind you next time you open the app).'
+        );
+      }
+      _prompting = false;
+      if (!ok) { _deferred = true; return; }
+
+      if (!phase2) {
+        const wiped = await wipeVolatile();
+        toast(wiped ? 'Browsing cache cleared' : 'Nothing to clear', wiped ? 'success' : '', 5000);
+        // If wiping the whole volatile cache didn't clear the over-condition, the
+        // pressure isn't the browsing cache — stop nagging until the next launch.
+        const after = await estimate();
+        if (after && isOver(after)) _deferred = true;
+      } else {
+        const tilesToFree = Math.max(1, offlineTiles - Math.floor(OFFLINE_TARGET / AVG_TILE));
+        const n = await freeOldestOffline(tilesToFree);
+        toast(n ? ('Freed offline tiles (' + n.toLocaleString() + ')') : 'Nothing to free', n ? 'success' : '', 6000);
+      }
+    } catch(_) {
+    } finally { _busy = false; }
+  }
+
+  async function check() {
+    if (_busy || _prompting || _deferred) return;
+    const m = await estimate();
+    if (!m) return;
+    if (!isOver(m)) return;
+    await handleOver(m);
+  }
+
   setTimeout(check, FIRST_CHECK_MS);
   setInterval(check, CHECK_INTERVAL_MS);
 });

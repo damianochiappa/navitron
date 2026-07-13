@@ -314,6 +314,18 @@ html, body {
 .btn-success:hover { box-shadow: 0 4px 16px rgba(76,175,125,.45); filter: brightness(1.08); }
 .btn-full { width: 100%; }
 .btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+/* Unified disabled state: still visible and legible (functionality stays
+   discoverable), but clearly inert — no hover sheen, no press feedback. */
+.btn:disabled,
+.btn[disabled] {
+  opacity: .45;
+  cursor: not-allowed;
+  box-shadow: none;
+  filter: none;
+}
+.btn:disabled:hover::after,
+.btn[disabled]:hover::after { background: rgba(255,255,255,0); }
+.btn:disabled:active { transform: none; }
 
 /* Inputs */
 .field { display: flex; flex-direction: column; gap: 5px; }
@@ -338,6 +350,12 @@ html, body {
 }
 .field input::placeholder, .field textarea::placeholder { color: var(--text-muted); }
 .field select option { background: var(--surface2); }
+/* Disabled inputs/selects share the same sober treatment as .btn:disabled
+   so the whole UI reads one enable/disable language. */
+.field input:disabled, .field select:disabled, .field textarea:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
 
 /* Layer list */
 #layer-list { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
@@ -480,8 +498,25 @@ html, body {
 .toast-item.show { opacity: 1; transform: translateY(0); }
 .toast-item.success { border-color: var(--success); color: var(--success); background: rgba(76,175,125,.12); }
 .toast-item.error   { border-color: var(--danger);  color: var(--danger);  background: rgba(239,83,80,.12); }
-.toast-item.warn    { border-color: #f0a830;         color: #f0a830;        background: rgba(240,168,48,.12); }
+.toast-item.warn    { border-color: var(--warn);     color: var(--warn);    background: rgba(245,166,35,.12); }
 .toast-item.info    { border-color: var(--accent);   color: var(--accent);  background: rgba(91,156,246,.10); }
+/* Important messages (error/warn) announce themselves with a brief glow pulse
+   on entry — twice, then settle. Not a continuous blink: draws the eye once
+   without nagging. Uses currentColor so the glow matches the message type. */
+@keyframes toast-attention {
+  0%   { box-shadow: 0 4px 20px rgba(0,0,0,.5); }
+  20%  { box-shadow: 0 4px 20px rgba(0,0,0,.5), 0 0 11px 1px currentColor; }
+  100% { box-shadow: 0 4px 20px rgba(0,0,0,.5); }
+}
+.toast-item.error, .toast-item.warn { animation: toast-attention 1.1s ease-out 2; }
+/* Inline wizard status errors: palette danger colour + the same brief glow
+   pulse, adapted to text (text-shadow) so there is no layout shift. */
+#cad-status.cad-status-err { color: var(--danger); }
+@keyframes cad-status-attention {
+  0%, 100% { text-shadow: none; }
+  30%      { text-shadow: 0 0 8px currentColor; }
+}
+#cad-status.cad-status-pulse { animation: cad-status-attention 1s ease-out 2; }
 
 /* When sidebar is push-layout (landscape / tablet, min-width 641px), center map-scoped floaters
    on the visible map area — not on the whole viewport — so they don't drift toward the sidebar.

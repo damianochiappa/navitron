@@ -217,7 +217,24 @@ function updateDrawStats(layer) {
     document.getElementById('stat-area').textContent = a || '--';
     document.getElementById('stat-dist').textContent = l || '--';
   }
+  _refreshDrawButtons();
 }
+
+/* Enable the "manage drawings" actions only when at least one shape exists.
+   The buttons stay visible so the feature remains discoverable; they just go
+   inert until they can do something. The per-action guards further down remain
+   in place as a safety net for any mutation path that doesn't route through
+   updateDrawStats (e.g. the Leaflet.Draw delete toolbar). */
+function _refreshDrawButtons() {
+  const has = drawnItems.getLayers().length > 0;
+  ['btn-export-all-kml', 'btn-export-all-geojson', 'btn-clear-draw'].forEach(id => {
+    const b = document.getElementById(id);
+    if (!b) return;
+    b.disabled = !has;
+    b.title = has ? '' : 'Draw a shape on the map first';
+  });
+}
+_refreshDrawButtons();
 
 /* Inject simplestyle-spec props from layer style so tokml({simplestyle:true})
    emits <LineStyle>/<PolyStyle>. Skips markers (no line/poly style applies). */
@@ -417,7 +434,7 @@ function exportGPX() {
     const base = (((fname || 'track').trim() || 'track')).replace(/\.gpx$/i, '');
     const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Navitron" xmlns="http://www.topografix.com/GPX/1/1">\n  <trk><name>${_xmlEsc(base)}</name><trkseg>\n${pts}\n  </trkseg></trk>\n</gpx>`;
     downloadFile(gpx, base + '.gpx', 'application/gpx+xml');
-  });
+  }, 'The .gpx file is saved to your device Downloads folder.');
 }
 
 document.getElementById('btn-track-toggle').addEventListener('click', () => {
@@ -496,7 +513,7 @@ function exportKML() {
     const nm = _xmlEsc(base);
     const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n  <Document>\n    <name>${nm}</name>\n    <Placemark>\n      <name>${nm}</name>\n      <LineString>\n        <tessellate>1</tessellate>\n        <altitudeMode>clampToGround</altitudeMode>\n        <coordinates>${coords}</coordinates>\n      </LineString>\n    </Placemark>\n  </Document>\n</kml>`;
     downloadFile(kml, base + '.kml', 'application/vnd.google-earth.kml+xml');
-  });
+  }, 'The .kml file is saved to your device Downloads folder.');
 }
 
 document.getElementById('btn-track-export').addEventListener('click', exportGPX);

@@ -9,25 +9,25 @@ let olMap = null;
 /* ===== BASEMAP DEFINITIONS ===== */
 const BASEMAPS = {
   osm: L.tileLayer('https://tile.opentopomap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://opentopomap.org">OpenTopoMap</a>', maxZoom: 17
+    attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, SRTM | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)', maxZoom: 17
   }),
   osm_std: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org">OpenStreetMap</a>', maxZoom: 19
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors', maxZoom: 19
   }),
   google_hybrid: L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_satellite/{z}/{x}/{y}.jpg', {
-    attribution: '&copy; <a href="https://stadiamaps.com">Stadia Maps</a>, USGS, NASA', maxZoom: 20
+    attribution: '&copy; CNES, Distribution Airbus DS, &copy; Airbus DS, &copy; PlanetObserver (Contains Copernicus Data) | &copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors', maxZoom: 20
   }),
   google_maps: L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://carto.com">CARTO</a> &copy; <a href="https://www.openstreetmap.org">OSM</a>', maxZoom: 20
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>', maxZoom: 20
   }),
   esri_sat: L.tileLayer('https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    attribution: '&copy; ESRI', maxZoom: 20
+    attribution: 'Esri, Maxar, Earthstar Geographics, and the GIS User Community', maxZoom: 20
   }),
   esri_topo: L.tileLayer('https://services.arcgisonline.com/arcgis/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
-    attribution: '&copy; ESRI', maxZoom: 20
+    attribution: 'Esri, HERE, Garmin, FAO, NOAA, USGS, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, and the GIS User Community', maxZoom: 20
   }),
   natgeo: L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}', {
-    attribution: '&copy; ESRI / NatGeo', maxZoom: 16
+    attribution: 'National Geographic, Esri, Garmin, HERE, UNEP-WCMC, USGS, NASA, ESA, METI, NRCAN, GEBCO, NOAA, iPC', maxZoom: 16
   })
 };
 
@@ -1029,8 +1029,7 @@ function _selExportKML() {
     const base = ((fname || 'selection').trim() || 'selection').replace(/\.kml$/i, '');
     downloadFile(tokml({ type:'FeatureCollection', features }),
       base + '.kml', 'application/vnd.google-earth.kml+xml');
-    toastMsg('Selection exported', 'success');
-  });
+  }, 'The .kml file is saved to your device Downloads folder.');
 }
 
 /* ===== ONBOARDING ===== */
@@ -1828,8 +1827,17 @@ function _addBasemapUI(cfg) {
     `<span>${name}${cfg.protected ? ' \uD83D\uDD12' : ''}</span>` +
     `<button class="bm-del" title="Remove map">\u2715</button>`;
   label.querySelector('input').addEventListener('change', () => switchBasemap(id));
-  label.querySelector('.bm-del').addEventListener('click', ev => {
+  label.querySelector('.bm-del').addEventListener('click', async ev => {
     ev.preventDefault(); ev.stopPropagation();
+    // Offline basemaps own a downloaded tile cache — confirm before removing,
+    // since it means a full re-download to get the area back.
+    const cfgEntry = customMapConfigs.find(c => c.id === id);
+    const isOffline = !!(cfgEntry && cfgEntry.offline);
+    if (isOffline) {
+      if (!confirm('Remove this offline map? Its downloaded tiles will be deleted and the area will need to be downloaded again.')) return;
+    } else if (!confirm('Remove this map? If it is not saved in your configuration, you will need to add it again.')) {
+      return;
+    }
     if (currentBasemapId === id) {
       try { map.removeLayer(currentBasemap); } catch(e) {}
       currentBasemap = BASEMAPS.osm; currentBasemapId = 'osm';
@@ -1844,6 +1852,15 @@ function _addBasemapUI(cfg) {
     if (idx !== -1) customMapConfigs.splice(idx, 1);
     _autoSaveConfig();
     label.remove();
+    // Free the dedicated offline cache and tell the SW its offline list changed.
+    if (isOffline && window.caches) {
+      try { await caches.delete('navitron-offline-' + id); } catch(e) {}
+      try {
+        if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({ type: 'offlineChanged' });
+        }
+      } catch(e) {}
+    }
     toastMsg('Map removed', 'success');
   });
   list.appendChild(label);

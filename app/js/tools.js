@@ -425,7 +425,7 @@ function _renderBookmarks() {
   const list = document.getElementById('bookmark-list');
   if (!list) return;
   if (!bookmarks.length) {
-    list.innerHTML = '<p class="bookmark-empty">No bookmarks saved</p>';
+    list.innerHTML = '<p class="bookmark-empty">No bookmarks yet — tap "Bookmark current view" below, or long-press the map to save a spot.</p>';
     return;
   }
   list.innerHTML = '';

@@ -155,7 +155,7 @@ function _xmlEsc(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
-function showPromptModal(message, defaultValue, onConfirm) {
+function showPromptModal(message, defaultValue, onConfirm, hint) {
   let modal = document.getElementById('prompt-modal');
   if (!modal) {
     modal = document.createElement('div');
@@ -165,6 +165,7 @@ function showPromptModal(message, defaultValue, onConfirm) {
       '<div class="modal-box">' +
         '<p id="prompt-modal-msg" style="margin-bottom:12px;font-size:13px;line-height:1.5"></p>' +
         '<div class="field"><input type="text" id="prompt-modal-input" autocomplete="off" autocorrect="off" spellcheck="false"></div>' +
+        '<p class="hint" id="prompt-modal-hint" style="margin:2px 0 10px;display:none"></p>' +
         '<div class="modal-btns">' +
           '<button class="btn btn-secondary" id="prompt-modal-cancel">Cancel</button>' +
           '<button class="btn btn-primary" id="prompt-modal-ok">OK</button>' +
@@ -183,6 +184,11 @@ function showPromptModal(message, defaultValue, onConfirm) {
     modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
   }
   document.getElementById('prompt-modal-msg').textContent = message;
+  const hintEl = document.getElementById('prompt-modal-hint');
+  if (hintEl) {
+    if (hint) { hintEl.textContent = hint; hintEl.style.display = 'block'; }
+    else { hintEl.textContent = ''; hintEl.style.display = 'none'; }
+  }
   const inp = document.getElementById('prompt-modal-input');
   inp.value = defaultValue || '';
   modal._cb = onConfirm;
@@ -364,6 +370,7 @@ function _downloadBrowser(blob, filename) {
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  toastMsg('Saved: ' + filename, 'success');
 }
 
 

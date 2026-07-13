@@ -37,7 +37,29 @@
     const el = $('cad-status');
     if (!el) return;
     el.textContent = msg || '';
-    el.style.color = isError ? 'var(--error, #d33)' : '';
+    el.classList.toggle('cad-status-err', !!isError);
+    // Re-trigger the one-time attention pulse on each error, even when the
+    // element was already in the error state — same emphasis language as the
+    // error/warn toasts: a brief glow pulse, not a continuous blink.
+    el.classList.remove('cad-status-pulse');
+    if (isError) { void el.offsetWidth; el.classList.add('cad-status-pulse'); }
+  }
+
+  // On a successful locate the map has zoomed to the result. If the sidebar is
+  // currently covering the whole screen (phone overlay), collapse it so the
+  // parcels are actually visible and confirm on the map; otherwise keep the
+  // inline status (on wider screens the map is already visible beside the panel).
+  function revealResult(msg) {
+    const sb = document.getElementById('sidebar');
+    const coversScreen = sb && !sb.classList.contains('collapsed') &&
+      sb.getBoundingClientRect().width >= window.innerWidth * 0.92;
+    if (coversScreen) {
+      sb.classList.add('collapsed');
+      if (typeof updateMenuState === 'function') updateMenuState();
+      if (typeof toastMsg === 'function') toastMsg(msg, 'success');
+    } else {
+      setStatus(msg, false);
+    }
   }
 
   // Uses the same native HTTP path as _WFSLayer (cordova-plugin-advanced-http) so it bypasses
@@ -638,7 +660,7 @@
       } catch (err) {
         if (window.console) console.warn('cadaster fitBounds (sheet) failed', err);
       }
-      setStatus('Zoomed to sheet ' + (sheet.label || ''), false);
+      revealResult('Zoomed to sheet ' + (sheet.label || ''));
       _done(); return;
     }
     // Filtering path — lower parcel layer's minZoom to 14 so subsequent _update fires at the
@@ -697,7 +719,7 @@
         _done(); return;
       }
       const marked = selectAllRendered(parcelLayer);
-      setStatus('Selected ' + marked + ' parcel' + (marked === 1 ? '' : 's'), false);
+      revealResult('Selected ' + marked + ' parcel' + (marked === 1 ? '' : 's'));
       const selB = computeSelBounds();
       if (selB && selB.isValid && selB.isValid()) {
         try {

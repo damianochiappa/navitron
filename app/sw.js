@@ -1,13 +1,13 @@
 // Navitron Service Worker - offline tile cache only
 // App shell (JS/CSS/HTML) is served directly from APK assets — no caching needed.
+// Volatile cache: every tile viewed while browsing. This is the ONLY cache the
+// cache-full prompt is allowed to wipe.
 const TILE_CACHE = 'navitron-tiles-v1';
 
-// ~4 GB at avg 15 KB/tile → 280 000 tiles
-const TILE_MAX   = 280000;
-const EVICT_STEP = 5000;
-
-// Lazy-loaded tile count (avoids cache.keys() on every fetch)
-let _tileCount = -1;
+// Each saved offline basemap gets its own cache 'navitron-offline-<id>'. These
+// are user-owned downloads: never evicted automatically, never wiped by the
+// SW — only removed on explicit user action (✕ in the list, or Clear cache).
+const OFFLINE_PREFIX = 'navitron-offline-';
 
 // Safe mode: when the previous session was killed mid-tile-load, the page
 // sets this so we short-circuit cache misses to 503 for a few seconds,
@@ -58,57 +58,100 @@ self.addEventListener('install', e => {
 });
 
 self.addEventListener('activate', e => {
-  // Delete any old app-shell caches left over from previous versions
+  // Delete any old app-shell caches left over from previous versions.
+  // IMPORTANT: preserve the volatile tile cache AND every offline-basemap
+  // cache (navitron-offline-*) — those hold user downloads.
   e.waitUntil(
     caches.keys().then(keys =>
       Promise.all(
-        keys.filter(k => k !== TILE_CACHE).map(k => caches.delete(k))
+        keys
+          .filter(k => k !== TILE_CACHE && !k.startsWith(OFFLINE_PREFIX))
+          .map(k => caches.delete(k))
       )
     )
   );
   self.clients.claim();
 });
 
+/* Names of the offline-basemap caches, memoised so the common case (no offline
+   basemaps) adds ZERO cost to a tile miss: an empty list is reused for 10 s
+   instead of calling caches.keys() on every miss. The page also invalidates it
+   instantly via an 'offlineChanged' message after a download/removal, so a
+   just-downloaded area is served offline without waiting for the TTL. */
+let _offNames = { list: null, at: 0 };
+const _OFF_TTL = 10000;
+async function _offlineCacheNames() {
+  const now = Date.now();
+  if (_offNames.list && (now - _offNames.at) < _OFF_TTL) return _offNames.list;
+  let list = [];
+  try { list = (await caches.keys()).filter(k => k.startsWith(OFFLINE_PREFIX)); } catch (_) {}
+  _offNames = { list, at: now };
+  return list;
+}
+
+/* Look up a tile in the offline-basemap caches. Called only after a miss in the
+   volatile cache. With no offline basemaps the memoised list is empty and this
+   returns immediately. Returns the cached Response or null. */
+async function _matchOffline(req) {
+  const names = await _offlineCacheNames();
+  for (const name of names) {
+    try {
+      const c = await caches.open(name);
+      const hit = await c.match(req, { ignoreVary: true });
+      if (hit) return hit;
+    } catch (_) { /* skip a cache that can't be opened */ }
+  }
+  return null;
+}
+
 self.addEventListener('message', e => {
-  if (e.data && e.data.type === 'safeMode') {
-    _safeModeUntil = Number(e.data.until) || 0;
+  const data = e.data || {};
+  if (data.type === 'safeMode') {
+    _safeModeUntil = Number(data.until) || 0;
     if (e.ports && e.ports[0]) e.ports[0].postMessage({ ack: true });
+  } else if (data.type === 'offlineChanged') {
+    _offNames = { list: null, at: 0 };   // force a refresh on the next miss
   }
 });
 
 self.addEventListener('fetch', e => {
   const url = e.request.url;
 
-  /* ── Tile requests: cache-first on normalized URL, LRU eviction ── */
+  /* ── Tile requests: cache-first (volatile → offline basemaps), then network ── */
   if (_isTileUrl(url)) {
     e.respondWith(
       caches.open(TILE_CACHE).then(async cache => {
         const normUrl = _normUrl(url);
         const normReq = new Request(normUrl);
+
+        // 1. Volatile cache (the common hit path — nothing else is touched).
         const cached = await cache.match(normReq, { ignoreVary: true });
         if (cached) return cached;
 
+        // 2. Offline-basemap caches (served even in safe mode: they are local
+        //    and can't hang like a network fetch).
+        const offlineHit = await _matchOffline(normReq);
+        if (offlineHit) return offlineHit;
+
+        // 3. Safe mode: right after a kill, don't pile up network fetches.
         if (Date.now() < _safeModeUntil) {
           return new Response('', { status: 503, statusText: 'SafeMode' });
         }
 
+        // 4. Network. Successful tiles are cached into the VOLATILE cache only;
+        //    offline caches are populated exclusively by explicit downloads.
         const response = await _fetchTile(e.request);
         if (!response) {
           return new Response('', { status: 503, statusText: 'Offline' });
         }
 
         if (response.ok || response.type === 'opaque') {
-          if (_tileCount < 0) {
-            _tileCount = (await cache.keys()).length;
-          }
-          if (_tileCount >= TILE_MAX) {
-            const keys = await cache.keys();
-            const toDelete = Math.min(EVICT_STEP, keys.length);
-            for (let i = 0; i < toDelete; i++) await cache.delete(keys[i]);
-            _tileCount = Math.max(0, _tileCount - toDelete);
-          }
-          cache.put(normReq, response.clone());
-          _tileCount++;
+          // Best-effort write. Eviction is user-driven now (the cache-full
+          // prompt) instead of running here on every fetch, which used to
+          // stall rendering. If the device quota is exhausted, cache.put
+          // rejects with QuotaExceededError — swallow it and still return the
+          // network response so the map keeps working.
+          cache.put(normReq, response.clone()).catch(() => {});
         }
 
         return response;

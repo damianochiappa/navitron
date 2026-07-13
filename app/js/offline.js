@@ -8,8 +8,19 @@
 
   const AVG_TILE_KB    = 15;
   const MAX_SIZE_GB    = 4;
-  const TOS_MAPS       = ['osm', 'osm_std', 'google_hybrid', 'google_maps'];
-  const TILE_CACHE_NAME = 'navitron-tiles-v1';
+  const TOS_MAPS       = ['osm', 'osm_std', 'google_hybrid', 'google_maps', 'esri_sat', 'esri_topo', 'natgeo'];
+  // Sources that EXPLICITLY prohibit bulk/offline tile download (not just
+  // discourage it) → hard-blocked from the offline downloader. Matched by the
+  // live tile URL, so a private override that repoints the same basemap key to
+  // another provider (e.g. basemaps-private.js) is NOT affected.
+  const OFFLINE_BLOCKED_HOSTS = ['stadiamaps.com'];
+  function _offlineBlocked(entry) {
+    const u = entry && typeof entry._url === 'string' ? entry._url : '';
+    return OFFLINE_BLOCKED_HOSTS.some(h => u.indexOf(h) !== -1);
+  }
+  const TILE_CACHE_NAME = 'navitron-tiles-v1';        // volatile (browsing) cache
+  const OFFLINE_PREFIX  = 'navitron-offline-';        // one dedicated cache per saved basemap
+  const _offlineCacheName = id => OFFLINE_PREFIX + id;
   const DL_CONCURRENCY = 3;     // parallel tile fetches
   const DL_DELAY_MS    = 50;    // ms pause between batches (rate-limit)
   const TILE_TIMEOUT_MS = 8000; // hard JS-side cap per request
@@ -116,9 +127,21 @@
   }
 
   /* ===== SW CACHE HELPERS ===== */
-  async function _openTileCache() {
+  async function _openCache(name) {
     if (!window.caches) return null;
-    try { return await caches.open(TILE_CACHE_NAME); } catch (_) { return null; }
+    try { return await caches.open(name); } catch (_) { return null; }
+  }
+  function _openTileCache() { return _openCache(TILE_CACHE_NAME); }
+
+  /* Tell the SW its cached list of offline caches is stale (a basemap was
+     added or removed), so a just-changed cache is used on the next tile miss
+     without waiting for the SW's 10 s TTL. */
+  function _notifySW() {
+    try {
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'offlineChanged' });
+      }
+    } catch (_) {}
   }
 
   /* Strip rotating subdomains so a tile cached from 'a.' is found when 'b.' requests it. */
@@ -159,8 +182,8 @@
      Strategy: try CORS first (readable response); on failure try no-cors
      (opaque response — browser can still render it as an <img> src).
      All zoom levels 1..maxZoom for the same extent are included. */
-  async function _downloadMissing(bounds, maxZoom, mapId, cachedSet) {
-    const cache = await _openTileCache();
+  async function _downloadMissing(bounds, maxZoom, mapId, cachedSet, destCache, volatileCache) {
+    const cache = destCache;
 
     const pending = [];
     for (let z = 1; z <= maxZoom; z++) {
@@ -187,8 +210,15 @@
           const normUrl = _normUrl(url);
           const normReq = new Request(normUrl);
 
-          // Skip if already in cache (ignoreVary: CORS responses may have Vary: Origin)
+          // Skip if already in the destination cache.
           if (cache && await cache.match(normReq, { ignoreVary: true })) return;
+
+          // Reuse a copy already sitting in the volatile browsing cache instead
+          // of re-downloading it (ignoreVary: CORS responses may have Vary: Origin).
+          if (volatileCache) {
+            const hit = await volatileCache.match(normReq, { ignoreVary: true });
+            if (hit) { if (cache) await cache.put(normReq, hit.clone()); return; }
+          }
 
           let response = null;
           let corsRejected = false;
@@ -234,12 +264,13 @@
 
     const entry = BASEMAPS[mapId];
     if (!entry) { toastMsg('Map not found', 'error', undefined, 'sidebar'); return; }
+    if (_offlineBlocked(entry)) { toastMsg('This map cannot be downloaded offline: the provider prohibits bulk tile download.', 'error', undefined, 'sidebar'); return; }
     maxZoom = Math.min(maxZoom, (entry.options && entry.options.maxZoom) || 18, 18);
 
     const tosWarn = document.getElementById('offline-tos-warn');
     if (TOS_MAPS.includes(mapId)) {
       if (tosWarn) tosWarn.style.display = '';
-      toastMsg('\u26A0 Check service ToS before using offline tiles', 'error', undefined, 'sidebar');
+      toastMsg('Check service ToS before using offline tiles', 'warn', undefined, 'sidebar');
     } else {
       if (tosWarn) tosWarn.style.display = 'none';
     }
@@ -252,15 +283,25 @@
       return;
     }
 
-    const cache = await _openTileCache();
-    if (!cache) { toastMsg('Tile cache not available (SW not active)', 'error', undefined, 'sidebar'); return; }
+    // This basemap gets its own dedicated cache so the cache-full prompt can
+    // never evict it. The id is generated up-front (before the download) so it
+    // names the destination cache and, later, the registered layer.
+    const id = 'offline_' + Date.now();
+    const destCache     = await _openCache(_offlineCacheName(id));
+    const volatileCache = await _openTileCache();   // may be null; used only to reuse browsed tiles
+    if (!destCache) { toastMsg('Tile cache not available (SW not active)', 'error', undefined, 'sidebar'); return; }
 
     _downloading = true; _cancelled = false;
+    let registered = false;
     _setProgress(0, total, true, 'Scanning');
 
     try {
-      /* ── Phase 1: scan existing cache ── */
-      const cachedSet = await _buildCachedSet(cache);
+      /* ── Phase 1: scan the dedicated cache (what's already downloaded for this
+         basemap). A tile present only in the volatile browsing cache counts as
+         "missing" here but is copied cheaply in Phase 2 rather than
+         re-downloaded — so the dedicated cache always ends up self-contained
+         and survives a volatile wipe. ── */
+      const cachedSet = await _buildCachedSet(destCache);
       let checked = 0, found = 0;
       const SCAN_BATCH = 500;
 
@@ -293,12 +334,17 @@
 
       /* ── Phase 2: download uncached tiles (all zoom levels 1..maxZoom) ── */
       if (missing > 0) {
-        await _downloadMissing(bounds, maxZoom, mapId, cachedSet);
+        await _downloadMissing(bounds, maxZoom, mapId, cachedSet, destCache, volatileCache);
       }
       if (_cancelled) { toastMsg('Cancelled', '', undefined, 'sidebar'); return; }
 
       /* ── Phase 3: register as offline basemap ── */
-      _registerLayer(mapName, mapId, maxZoom);
+      // Record the real tile count so the cache-full logic can size this
+      // basemap later without enumerating the cache (which would freeze the UI).
+      let tileCount = 0;
+      try { tileCount = (await destCache.keys()).length; } catch (_) {}
+      _registerLayer(mapName, mapId, maxZoom, id, tileCount);
+      registered = true;
       toastMsg('Offline basemap ready: ' + mapName + ' (~' + sizeStr + ')', 'success', undefined, 'sidebar');
 
     } catch (e) {
@@ -306,11 +352,16 @@
     } finally {
       _downloading = false;
       _setProgress(0, 0, false);
+      // Never leave an orphan cache behind: if we didn't register (cancel or
+      // error), drop the dedicated cache we created for this attempt.
+      if (!registered && window.caches) {
+        try { await caches.delete(_offlineCacheName(id)); } catch (_) {}
+      }
     }
   }
 
   /* ===== REGISTER OFFLINE BASEMAP ===== */
-  function _registerLayer(name, sourceMapId, maxZoom) {
+  function _registerLayer(name, sourceMapId, maxZoom, id, tiles) {
     const sourceEntry = BASEMAPS[sourceMapId];
     if (!sourceEntry || typeof sourceEntry.getTileUrl !== 'function') {
       toastMsg('Cannot get tile URL for this map', 'error', undefined, 'sidebar'); return;
@@ -330,16 +381,45 @@
       } catch (_) { templateUrl = ''; }
     }
 
-    const id = 'offline_' + Date.now();
     BASEMAPS[id] = L.tileLayer(templateUrl, {
       attribution: 'Offline: ' + name,
       maxZoom: maxZoom, maxNativeZoom: maxZoom
     });
-    const cfg = { id, type: 'wmts', url: templateUrl, name: 'Offline: ' + name, offline: true };
+    const cfg = { id, type: 'wmts', url: templateUrl, name: 'Offline: ' + name, offline: true, tiles: tiles || 0 };
     customMapConfigs.push(cfg);
     _autoSaveConfig();
     _addBasemapUI(cfg);
+    _notifySW();
   }
+
+  /* ===== REMOVE ONE OFFLINE BASEMAP (entry only — caller deletes its cache) =====
+     Drops the layer, its config entry and its list row. If it is the active
+     basemap, falls back to OpenTopoMap. Defensive: every global it touches is
+     guarded so a partial app state can't throw here. */
+  function _purgeOfflineEntry(id) {
+    try {
+      if (typeof currentBasemapId !== 'undefined' && currentBasemapId === id && typeof switchBasemap === 'function') {
+        switchBasemap('osm');
+        const osmRadio = document.querySelector('#basemap-list input[name="basemap"][value="osm"]');
+        if (osmRadio) osmRadio.checked = true;
+      }
+    } catch (_) {}
+    try { if (typeof BASEMAPS !== 'undefined') delete BASEMAPS[id]; } catch (_) {}
+    try {
+      if (typeof customMapConfigs !== 'undefined') {
+        const i = customMapConfigs.findIndex(c => c.id === id);
+        if (i !== -1) customMapConfigs.splice(i, 1);
+      }
+    } catch (_) {}
+    const input = document.querySelector('#basemap-list input[name="basemap"][value="' + id + '"]');
+    const label = input && input.closest('label');
+    if (label) label.remove();
+    if (typeof _autoSaveConfig === 'function') _autoSaveConfig();
+    _notifySW();
+  }
+  // Exposed so the cache-full prompt (in geoapp.html) can drop legacy offline
+  // entries during the storage re-alignment branch.
+  window._nvPurgeOffline = _purgeOfflineEntry;
 
   /* ===== FORM INIT ===== */
   (function initForm() {
@@ -382,6 +462,7 @@
         if (offlineIds.has(id)) return;
         const entry = BASEMAPS[id];
         if (!entry || entry._needsCreds || typeof entry.getTileUrl !== 'function') return;
+        if (_offlineBlocked(entry)) return;   // provider prohibits bulk download → not offerable offline
         const span = radio.closest('label') && radio.closest('label').querySelector('span');
         const name = span ? span.textContent.trim() : id;
         const o = document.createElement('option');
@@ -416,17 +497,16 @@
       });
     }
 
-    /* Clear the entire tile cache.  Targets only navitron-tiles-v1 — does not
-       touch localStorage (saved view, custom basemaps), IndexedDB (drawings,
-       imported layers) or any other app state.  Offline basemaps registered
-       in customMapConfigs will still appear in the list but render blank
-       until re-downloaded. */
+    /* Clear ALL cached tiles: the volatile browsing cache AND every saved
+       offline basemap. Does not touch localStorage (saved view), IndexedDB
+       (drawings, imported layers) or any other app state. Offline basemap
+       entries are removed from the list too, since their tiles are gone. */
     const clearBtn = document.getElementById('btn-offline-clear');
     if (clearBtn) {
       clearBtn.addEventListener('click', async () => {
         if (_downloading) { toastMsg('Cannot clear while download is in progress', 'error', undefined, 'sidebar'); return; }
         if (!window.caches) { toastMsg('Cache API not available', 'error', undefined, 'sidebar'); return; }
-        if (!confirm('Clear the entire tile cache? Offline basemaps will need to be re-downloaded.')) return;
+        if (!confirm('Delete ALL saved map tiles?\n\nThis clears both the automatic browsing cache and every offline map you downloaded — they will need downloading again. Your drawings and settings are not affected.')) return;
         try {
           // Use storage.estimate() to report freed size without enumerating
           // cache entries (cache.keys() can take minutes on a full cache).
@@ -434,9 +514,26 @@
           // subsystems, but tile bytes dominate by orders of magnitude.
           const est = navigator.storage && navigator.storage.estimate;
           const before = est ? ((await navigator.storage.estimate()).usage || 0) : 0;
-          const ok = await caches.delete(TILE_CACHE_NAME);
-          if (!ok) { toastMsg('No cache to clear', '', undefined, 'sidebar'); return; }
-          let msg = 'Tile cache cleared';
+
+          // Delete the volatile cache and every offline-basemap cache (including
+          // any orphans not present in customMapConfigs).
+          const names = await caches.keys();
+          let deletedAny = false;
+          for (const name of names) {
+            if (name === TILE_CACHE_NAME || name.startsWith(OFFLINE_PREFIX)) {
+              const ok = await caches.delete(name);
+              deletedAny = deletedAny || ok;
+            }
+          }
+
+          // Remove the now-empty offline basemap entries from the list/config.
+          const offlineIds = (typeof customMapConfigs !== 'undefined')
+            ? customMapConfigs.filter(c => c.offline).map(c => c.id) : [];
+          offlineIds.forEach(_purgeOfflineEntry);
+          _notifySW();
+
+          if (!deletedAny) { toastMsg('No cache to clear', '', undefined, 'sidebar'); return; }
+          let msg = 'Cache cleared';
           if (est) {
             const after = (await navigator.storage.estimate()).usage || 0;
             const freed = Math.max(0, before - after);
