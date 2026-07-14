@@ -751,6 +751,17 @@ const _WMSImageLayer = L.Layer.extend({
 
   onAdd(map) {
     this._map = map;
+    // Render the basemap image in a dedicated pane between the tile pane (200) and
+    // the overlay pane (400), so vector overlays (KML, drawings, WFS) always draw on
+    // top. Without this the image lands in the default overlayPane and re-stamps over
+    // sibling vectors on every moveend/zoomend (they flicker and vanish under it).
+    if (!map.getPane('wms-basemap-img')) {
+      const p = map.createPane('wms-basemap-img');
+      p.style.zIndex = 250;
+      const rotatePane = map.getPane('rotatePane');
+      if (rotatePane) rotatePane.appendChild(p);
+    }
+    _reorderMapPanes(map);
     map.on('moveend zoomend resize', this._schedule, this);
     this._schedule();
   },
@@ -817,7 +828,7 @@ const _WMSImageLayer = L.Layer.extend({
       if (reqId !== this._reqId) return;
       const prev = this._overlay;
       this._overlay = L.imageOverlay(dataUrl, bounds, {
-        opacity:this.options.opacity, zIndex:200
+        opacity:this.options.opacity, zIndex:200, pane:'wms-basemap-img'
       }).addTo(map);
       if (prev) try { map.removeLayer(prev); } catch(_) {}
     };
