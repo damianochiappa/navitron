@@ -24,7 +24,7 @@ App Android **open source per il catasto italiano**, pensata per il lavoro sul c
 
 ## A cosa serve Navitron
 
-Navitron ti aiuta a trovare i confini di un terreno partendo dai dati catastali — comune, foglio e particella — e a individuarlo sulla mappa satellitare. Con il GPS raggiungi la particella sul posto e ti orienti tra confini, fabbricati, strade e corsi d'acqua, anche senza connessione grazie alle mappe salvate per l'uso offline.
+Navitron ti aiuta a individuare un terreno partendo dai dati catastali — comune, foglio e particella — e a riconoscerlo sulla mappa satellitare. Con il GPS raggiungi la particella sul posto e ti orienti tra confini, fabbricati, strade e corsi d'acqua, anche senza connessione grazie alle mappe salvate per l'uso offline.
 
 I dati del Catasto Terreni dell'Agenzia delle Entrate — particelle e fogli — sono già preconfigurati e pronti all'uso (il Catasto Fabbricati non è incluso). Catasto e altri tematismi si sovrappongono alla mappa di sfondo che preferisci — satellitare, topografica o stradale — e di ogni livello puoi regolarne l'opacità (e il colore, per i livelli vettoriali come le particelle catastali) per confrontarlo con il terreno sottostante. Puoi aggiungere altri livelli cartografici indicandone l'indirizzo una sola volta: restano salvati e si ricaricano agli avvii successivi. Sono supportati servizi pubblici come la cartografia INSPIRE di IGM e Geoportale Nazionale e — con le relative credenziali — i servizi ArcGIS/ESRI della tua organizzazione, nei formati WMS, WFS, WMTS/XYZ e ArcGIS MapServer.
 
@@ -87,9 +87,9 @@ Navitron è uno strumento di consultazione e orientamento sul terreno. I confini
 
 ## Privacy
 
-Navitron non richiede un account, non contiene sistemi di analytics o telemetria e non raccoglie alcun dato. Tracce, segnaposti, disegni, livelli importati e mappe salvate restano sul dispositivo.
+Navitron non richiede un account, non contiene sistemi di analytics o telemetria e non raccoglie alcun dato. Tracce, segnaposti, disegni, livelli importati e mappe salvate restano sul dispositivo. Le credenziali dei servizi protetti non vengono salvate: la password serve solo a ottenere un token temporaneo dal servizio stesso, e il token resta in memoria fino alla chiusura dell'app.
 
-I servizi di terze parti che l'app interroga per funzionare — mappe di sfondo, catasto dell'Agenzia delle Entrate, routing (OSRM), quota del terreno (Open-Meteo) — ricevono le tue richieste come se li visitassi con il browser, e valgono le rispettive informative.
+I servizi di terze parti che l'app interroga per funzionare — mappe di sfondo, catasto dell'Agenzia delle Entrate, ricerca dei luoghi (Nominatim/OpenStreetMap), routing (OSRM), quota del terreno (Open-Meteo) — ricevono le tue richieste come se li visitassi con il browser, e valgono le rispettive informative.
 
 ---
 

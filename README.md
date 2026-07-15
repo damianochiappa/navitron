@@ -104,9 +104,9 @@ Navitron is a tool for field consultation and orientation. The cadastral boundar
 
 ## Privacy
 
-Navitron requires no account, contains no analytics or telemetry, and collects no data. Tracks, bookmarks, drawings, imported layers and saved maps stay on the device.
+Navitron requires no account, contains no analytics or telemetry, and collects no data. Tracks, bookmarks, drawings, imported layers and saved maps stay on the device. Credentials for protected services are never saved: the password is only used to obtain a temporary token from the service itself, and the token stays in memory until the app is closed.
 
-The third-party services the app queries in order to work — basemaps, the Agenzia delle Entrate cadastre, routing (OSRM), terrain elevation (Open-Meteo) — receive your requests as if you visited them with your browser, and their own privacy policies apply.
+The third-party services the app queries in order to work — basemaps, the Agenzia delle Entrate cadastre, place search (Nominatim/OpenStreetMap), routing (OSRM), terrain elevation (Open-Meteo) — receive your requests as if you visited them with your browser, and their own privacy policies apply.
 
 ---
 
