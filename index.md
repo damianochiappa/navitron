@@ -30,8 +30,8 @@ I dati del Catasto Terreni dell'Agenzia delle Entrate — particelle e fogli —
 
 **Per chi è pensato**
 
-- **Proprietari** — trovi i confini di un terreno che possiedi o hai ereditato partendo dagli estremi catastali, anche senza conoscere la zona.
-- **Agricoltura** — individui i tuoi campi, ne verifichi i confini prima delle lavorazioni e prepari le pratiche PAC/AGEA esportando le particelle in KML o GPX.
+- **Proprietari** — individui un terreno che possiedi o hai ereditato partendo dagli estremi catastali, anche senza conoscere la zona.
+- **Agricoltura** — individui i tuoi campi, li riconosci sul terreno prima delle lavorazioni e prepari le pratiche PAC/AGEA esportando le particelle in KML o GPX.
 - **Geometri, periti e tecnici** — sopralluoghi e consultazione catastale sul campo: ricerca per comune, foglio e particella, sovrapposizione di più livelli, lettura e conversione delle coordinate (DD, DMS, UTM, MGRS), modifica dei vertici.
 - **Fotovoltaico, agrivoltaico ed eolico** — individui rapidamente le particelle di interesse per valutare terreni adatti agli impianti da fonti rinnovabili.
 - **Settore forestale** — riconosci i confini delle particelle prima di un taglio o di un intervento, direttamente sul terreno.
@@ -76,6 +76,26 @@ Per aggiornare, installa la release più recente sopra quella esistente: l'app s
 ## Compilazione dai sorgenti
 
 Per contribuire e compilare dai sorgenti (build on-device con Termux + proot-distro), vedi le istruzioni complete nel **[README del repository](https://github.com/damianochiappa/navitron#build-from-source-advanced-optional)**.
+
+---
+
+## Note d'uso
+
+Navitron è uno strumento di consultazione e orientamento sul terreno. I confini catastali che visualizza provengono dai servizi pubblici INSPIRE dell'Agenzia delle Entrate e hanno una precisione dell'ordine di alcuni metri: sono adatti a individuare e riconoscere una particella, non a definire un confine di proprietà. La determinazione dei confini, i tipi di frazionamento e ogni atto con rilevanza legale restano di competenza di un tecnico qualificato, sulla base della documentazione catastale ufficiale e di un rilievo strumentale.
+
+---
+
+## Privacy
+
+Navitron non richiede un account, non contiene sistemi di analytics o telemetria e non raccoglie alcun dato. Tracce, segnaposti, disegni, livelli importati e mappe salvate restano sul dispositivo.
+
+I servizi di terze parti che l'app interroga per funzionare — mappe di sfondo, catasto dell'Agenzia delle Entrate, routing (OSRM), quota del terreno (Open-Meteo) — ricevono le tue richieste come se li visitassi con il browser, e valgono le rispettive informative.
+
+---
+
+## Supporto
+
+Segnalazioni di bug e richieste di funzionalità sono benvenute nelle [Issue del repository](https://github.com/damianochiappa/navitron/issues).
 
 ---
 
