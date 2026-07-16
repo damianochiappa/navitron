@@ -142,6 +142,21 @@ map.addControl(new L.Control.Draw({
     proj4.defs('EPSG:4258', '+proj=longlat +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +no_defs');
     proj4.defs('EPSG:6706', '+proj=longlat +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +no_defs');
     ol.proj.proj4.register(proj4);
+    /* EPSG:4258 and EPSG:6706 are geographic CRS whose EPSG axis order is lat,lon. The
+       proj4 defs above carry no +axis, so register() leaves the OL projection on the
+       'enu' default and ImageWMS sends a lon,lat BBOX in a WMS 1.3.0 GetMap: the server
+       reads it as lat,lon and answers with an empty image. OL already knows how to swap
+       — it does so only when VERSION >= 1.3 and the orientation starts with 'ne' — so
+       only the orientation is missing. This build exposes no setAxisOrientation, and
+       putting +axis=neu on the proj4 def would also change the proj4 transforms OL uses
+       to reproject the image, so the field is set directly. Guarded: on 1.1.1 the swap
+       is never consulted, so this cannot affect that path. */
+    ['EPSG:4258', 'EPSG:6706'].forEach(c => {
+      try {
+        const p = ol.proj.get && ol.proj.get(c);
+        if (p && 'axisOrientation_' in p) p.axisOrientation_ = 'neu';
+      } catch(_) {}
+    });
   }
 
   const c = map.getCenter();
@@ -167,8 +182,11 @@ map.addControl(new L.Control.Draw({
     const view = olMap.getView();
     view.setCenter(ol.proj.fromLonLat([mc.lng, mc.lat]));
     view.setResolution(156543.033928041 / Math.pow(2, map.getZoom()));
-    // Leaflet bearing is degrees CW from north; OL rotation is radians CCW
-    view.setRotation(-map.getBearing() * Math.PI / 180);
+    // Both count clockwise from north: leaflet-rotate getBearing() returns degrees
+    // (_bearing * RAD_TO_DEG), ol View.setRotation takes radians. Same direction, so
+    // the conversion carries no sign flip — negating it rotated the two maps opposite
+    // ways and they only agreed at bearing 0.
+    view.setRotation(map.getBearing() * Math.PI / 180);
   }
   map.on('move', _syncOlView);
   map.on('rotate', _syncOlView);
@@ -738,6 +756,12 @@ document.addEventListener('deviceready', () => {
    refreshing on moveend/zoomend.  Fetch is via cordova.plugin.http (SSL nocheck).
    BBOX and CRS are computed from current map bounds — no screen-pixel coordinates
    are used as geographic values. */
+/* Revoke an object URL if that is what it is — no-op for plain http(s) URLs, which is
+   what _show receives on the non-Cordova path. */
+function _revokeObj(u) {
+  if (u && u.indexOf('blob:') === 0) { try { URL.revokeObjectURL(u); } catch(_) {} }
+}
+
 const _WMSImageLayer = L.Layer.extend({
   options: { layers:'', version:'1.1.1', crs:null, format:'image/png',
              transparent:true, opacity:0.8, attribution:'' },
@@ -746,6 +770,7 @@ const _WMSImageLayer = L.Layer.extend({
     this._wmsUrl = url.split('?')[0];
     L.setOptions(this, options);
     this._overlay = null;
+    this._overlayUrl = null;   // object URL backing _overlay, revoked when replaced
     this._reqId   = 0;
   },
 
@@ -782,6 +807,8 @@ const _WMSImageLayer = L.Layer.extend({
       try { this._map.removeLayer(this._overlay); } catch(_) {}
       this._overlay = null;
     }
+    _revokeObj(this._overlayUrl);
+    this._overlayUrl = null;
   },
 
   _schedule() {
@@ -824,13 +851,18 @@ const _WMSImageLayer = L.Layer.extend({
     if (!size.x || !size.y) return;
     const reqId = ++this._reqId;
     const url   = this._buildUrl(bounds, size);
-    const _show = dataUrl => {
-      if (reqId !== this._reqId) return;
-      const prev = this._overlay;
-      this._overlay = L.imageOverlay(dataUrl, bounds, {
+    const _show = imgUrl => {
+      // A response that lost the race must still release its object URL, otherwise the
+      // fast-panning case leaks exactly the buffers this path exists to avoid copying.
+      if (reqId !== this._reqId) { _revokeObj(imgUrl); return; }
+      const prev    = this._overlay;
+      const prevUrl = this._overlayUrl;
+      this._overlay = L.imageOverlay(imgUrl, bounds, {
         opacity:this.options.opacity, zIndex:200, pane:'wms-basemap-img'
       }).addTo(map);
+      this._overlayUrl = imgUrl;
       if (prev) try { map.removeLayer(prev); } catch(_) {}
+      _revokeObj(prevUrl);
     };
 
     if (window.cordova && cordova.plugin && cordova.plugin.http) {
@@ -838,11 +870,9 @@ const _WMSImageLayer = L.Layer.extend({
         res => {
           if (reqId !== this._reqId) return;
           try {
-            const bytes = new Uint8Array(res.data);
-            let bin = '';
-            for (let i = 0; i < bytes.length; i += 8192)
-              bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
-            _show('data:image/png;base64,' + btoa(bin));
+            // Blob instead of a base64 data URL: no main-thread string building, no 33%
+            // size inflation. See the same change in the OpenLayers imageLoadFunction.
+            _show(URL.createObjectURL(new Blob([res.data], { type:'image/png' })));
           } catch(_) {}
         },
         () => {}
@@ -1734,7 +1764,12 @@ function _createLayer(cfg, token, isOverlay) {
         const ver      = cfg.version || '1.3.0';
         const olSource = new ol.source.ImageWMS({
           url: wmsUrl,
-          params: { 'LAYERS': cfg.layers, 'VERSION': ver },
+          // TRANSPARENT defaults to FALSE in the WMS spec: without it the server returns
+          // an opaque image on BGCOLOR (white) that blankets everything underneath — fatal
+          // for an overlay, invisible as a basemap. FORMAT must be a format that carries
+          // an alpha channel for TRANSPARENT to mean anything.
+          params: { 'LAYERS': cfg.layers, 'VERSION': ver,
+                    'TRANSPARENT': true, 'FORMAT': 'image/png' },
           projection: cfg.crs || 'EPSG:4326',
           crossOrigin: 'anonymous',
           imageLoadFunction: function(image, src) {
@@ -1743,11 +1778,17 @@ function _createLayer(cfg, token, isOverlay) {
                 src, { method: 'get', responseType: 'arraybuffer' },
                 res => {
                   try {
-                    const bytes = new Uint8Array(res.data);
-                    let bin = '';
-                    for (let i = 0; i < bytes.length; i += 8192)
-                      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
-                    image.getImage().src = 'data:image/png;base64,' + btoa(bin);
+                    // Hand the bytes to the browser as a Blob rather than building a
+                    // base64 data URL: the old path walked the whole PNG in 8 KB slices
+                    // on the main thread and inflated it by a third, on every moveend.
+                    const objUrl = URL.createObjectURL(new Blob([res.data], { type: 'image/png' }));
+                    const img = image.getImage();
+                    // addEventListener, not onload: OL installs its own load/error
+                    // handlers on this element to drive its imageload* events.
+                    const _free = () => URL.revokeObjectURL(objUrl);
+                    img.addEventListener('load',  _free, { once: true });
+                    img.addEventListener('error', _free, { once: true });
+                    img.src = objUrl;
                   } catch(_) { image.getImage().src = src; }
                 },
                 () => { image.getImage().src = src; }
@@ -1897,6 +1938,17 @@ function _addBasemapUI(cfg) {
     document.getElementById('ws-filter-field').style.display = isWfs ? '' : 'none';
     document.getElementById('ws-filter-vals-field').style.display = isWfs ? '' : 'none';
     document.getElementById('ws-layers-select').style.display = 'none';
+    // Tile pyramids (XYZ/WMTS, ArcGIS tile caches) are normally finished cartographic
+    // products, so default them to basemap. WMS is the composable one — LAYERS plus
+    // TRANSPARENT, usually vector rasterized on demand — and stays on overlay. This is a
+    // default and not a rule: transparent pyramids (hillshade, labels) are legitimate
+    // overlays, so the choice is left open.
+    const useEl = document.getElementById('ws-use');
+    if (useEl) {
+      const ovOpt = useEl.querySelector('option[value="overlay"]');
+      if (ovOpt) ovOpt.disabled = false;
+      if (t === 'wmts' || t === 'arcgis') useEl.value = 'basemap';
+    }
     // Reset CRS dropdown on type change — capabilities will repopulate it after "Get layers"
     const _crsEl = document.getElementById('ws-crs');
     if (_crsEl) {
@@ -2003,7 +2055,10 @@ function _addBasemapUI(cfg) {
       const sel = document.getElementById('ws-layers-select');
       _fillSelect(sel, names, names[0]);
       sel.style.display = '';
-      sel.onchange = () => { document.getElementById('ws-layers').value = sel.value; };
+      sel.onchange = () => {
+        document.getElementById('ws-layers').value = sel.value;
+        if (type === 'wms') _showScaleHint(sel.value);
+      };
       document.getElementById('ws-layers').value = names[0];
 
       // Normalize any EPSG CRS form → EPSG:xxxx
@@ -2013,7 +2068,68 @@ function _addBasemapUI(cfg) {
         return m ? 'EPSG:' + m[1] : raw.toUpperCase();
       };
 
+      /* ── Scale window → zoom range ──
+         A WMS layer declares the scale range it draws at; outside it the server answers
+         with a valid but empty image, which is indistinguishable from a broken layer.
+         (Agenzia Entrate CP.CadastralParcel: MaxScaleDenominator 5000 → nothing below
+         zoom 17.) The number is already in the capabilities we fetch, so surface it.
+         Only WMS 1.3.0 ScaleDenominator is read: the 1.1.1 ScaleHint means the diagonal
+         of a pixel and is implemented inconsistently across servers, so it is skipped
+         rather than guessed at. */
+      const _scaleToZoom = (denom, lat) =>
+        Math.log2(156543.03392 * Math.cos(lat * Math.PI / 180) / (denom * 0.00028));
+
+      // Scale limits are inheritable in WMS: walk up the Layer chain until one is declared.
+      const _scaleWindow = name => {
+        const target = [...xml.getElementsByTagName('Layer')].find(L =>
+          [...L.children].some(c => c.localName === 'Name' && c.textContent.trim() === name));
+        if (!target) return null;
+        let min = null, max = null;
+        for (let el = target; el && el.localName === 'Layer'; el = el.parentNode) {
+          for (const c of el.children) {
+            if (min === null && c.localName === 'MinScaleDenominator') min = parseFloat(c.textContent);
+            if (max === null && c.localName === 'MaxScaleDenominator') max = parseFloat(c.textContent);
+          }
+          if (min !== null && max !== null) break;
+        }
+        return (min || max) ? { min, max } : null;
+      };
+
+      const _showScaleHint = name => {
+        const el = document.getElementById('ws-scale-hint');
+        if (!el) return;
+        el.textContent = ''; el.style.display = 'none';
+        try {
+          const w = _scaleWindow(name);
+          if (!w) return;
+          const lat  = map.getCenter().lat;
+          const zMin = w.max ? Math.ceil(_scaleToZoom(w.max, lat))  : null;
+          const zMax = w.min ? Math.floor(_scaleToZoom(w.min, lat)) : null;
+          const parts = [];
+          if (zMin !== null) parts.push('from zoom ' + zMin);
+          if (zMax !== null) parts.push('up to zoom ' + zMax);
+          if (!parts.length) return;
+          el.textContent = 'This layer is drawn ' + parts.join(', ') +
+                           ' — outside that range the server returns an empty image.';
+          el.style.display = '';
+        } catch(_) { /* hint only: never break the capabilities flow */ }
+      };
+
       if (type === 'wms') {
+        _showScaleHint(names[0]);
+
+        /* Adopt the version the server declares on the capabilities root:
+           <WMS_Capabilities version="1.3.0"> or <WMT_MS_Capabilities version="1.1.1">.
+           GetCapabilities is issued without VERSION, so what comes back is the highest
+           the server supports — and the CRS list parsed below comes from that same
+           document, so the GetMap should speak it too. Mirrors what the WFS branch does
+           with ServiceTypeVersion. Only adopted if the dropdown actually offers it. */
+        const _capsVer   = xml.documentElement.getAttribute('version');
+        const _verSelect = document.getElementById('ws-version');
+        if (_capsVer && _verSelect && [..._verSelect.options].some(o => o.value === _capsVer)) {
+          _verSelect.value = _capsVer;
+        }
+
         // Extract supported CRS/SRS from capabilities and update dropdown
         const crsCodes = [...new Set(
           [...xml.getElementsByTagName('CRS'), ...xml.getElementsByTagName('SRS')]
@@ -2025,11 +2141,14 @@ function _addBasemapUI(cfg) {
         const preferred = ['EPSG:4258', 'EPSG:4326', 'EPSG:6706', 'EPSG:3857'];
         const crsSelect = document.getElementById('ws-crs');
         if (crsCodes.length) {
+          // Only offer CRS the renderer can actually honour. _WMSImageLayer projects the
+          // BBOX with L.CRS.EPSG4326 for anything that is not EPSG:3857, so a projected
+          // CRS (UTM etc.) would ship degrees labelled as metres and the server answers
+          // with an empty image. Codes advertised by the server but outside `preferred`
+          // are dropped rather than listed as choices that cannot work.
           const supported = preferred.filter(c => crsCodes.includes(c));
-          const others = crsCodes.filter(c => !preferred.includes(c)).sort();
-          const all = supported.length ? [...supported, ...others] : [...preferred, ...others];
-          const best = preferred.find(c => crsCodes.includes(c)) || all[0];
-          _fillSelect(crsSelect, all, best);
+          const all = supported.length ? supported : preferred;
+          _fillSelect(crsSelect, all, all[0]);
         }
       } else if (type === 'wfs') {
         // WFS 2.0: DefaultCRS + OtherCRS per FeatureType; WFS 1.x: SRS element
@@ -2045,12 +2164,17 @@ function _addBasemapUI(cfg) {
         const preferred = ['EPSG:4258', 'EPSG:4326', 'EPSG:6706', 'EPSG:3857'];
         const crsSelect = document.getElementById('ws-crs');
         if (crsCodes.length) {
+          // Same constraint as the WMS branch: the GML reader takes coordinates as
+          // lat/lon degrees and proj4 is registered for OpenLayers only, so features
+          // requested in a projected CRS would land off-map. Offer only what the
+          // reader can consume.
           const supported = preferred.filter(c => crsCodes.includes(c));
-          const others = crsCodes.filter(c => !preferred.includes(c)).sort();
-          const all = supported.length ? [...supported, ...others] : [...preferred, ...others];
-          // DefaultCRS is listed first in rawCodes — use it if it's an EPSG code, else fall back to preferred
+          const all = supported.length ? supported : preferred;
+          // DefaultCRS is listed first in rawCodes — honour it only if it survived the
+          // filter, otherwise fall back to the first offered code rather than selecting
+          // a value that is no longer in the list.
           const defaultCrs = rawCodes[0];
-          const selCrs = defaultCrs || (preferred.find(c => crsCodes.includes(c)) || all[0]);
+          const selCrs = all.includes(defaultCrs) ? defaultCrs : all[0];
           _fillSelect(crsSelect, all, selCrs);
         }
         // Output format support: scan WFS 1.x <Format> and WFS 2.0 <Parameter name="outputFormat"><Value>.

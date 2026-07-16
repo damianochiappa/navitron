@@ -69,6 +69,10 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
   const initVisible = opts.visible !== false;
   const initColor   = opts.color || '#4f8ef7';
   const initHollow  = opts.hollow || false;
+  // Raster layers (WMS via OpenLayers, XYZ/WMTS/ArcGIS tiles) carry no client-side
+  // style: colour and fill are baked into the image by the server. Only opacity
+  // applies, so the colour and hollow controls are omitted rather than shown dead.
+  const isRaster    = layer._isOL === true || layer instanceof L.TileLayer;
   if (initHollow) _setLayerHollow(layer, true);
   // setLayerOpacity below will apply the correct stroke+fill based on _hollow
 
@@ -76,7 +80,7 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
   loadedLayers[id] = layer;
   // OL layers go to the OL map; Leaflet layers go to the Leaflet map
   if (layer._isOL) {
-    if (window.olMap) olMap.addLayer(layer);
+    if (olMap) olMap.addLayer(layer);
     if (!initVisible) layer.setVisible(false);
   } else {
     layer.addTo(map);
@@ -95,8 +99,8 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
     <span class="layer-drag" title="Drag to reorder">\u22EE</span>
     <input type="checkbox" ${initVisible ? 'checked' : ''} title="Show/hide">
     <span class="layer-name" title="${name} (double-tap to rename)">${name}</span>
-    <input type="color" class="layer-color" value="${initColor}" title="Layer color">
-    <button class="layer-hollow${initHollow ? ' active' : ''}" title="Hollow — no fill">\u2205</button>
+    ${isRaster ? '' : `<input type="color" class="layer-color" value="${initColor}" title="Layer color">`}
+    ${isRaster ? '' : `<button class="layer-hollow${initHollow ? ' active' : ''}" title="Hollow — no fill">\u2205</button>`}
     <button class="layer-zoom" title="Zoom to layer">\u29C6</button>
     ${opts.isWfs ? '<button class="layer-find" title="Find filtered features (ignore viewport)">\u2316</button>' : ''}
     ${opts.isWfs ? '<button class="layer-filter" title="Edit WFS filter">\u25BD</button>' : ''}
@@ -108,13 +112,14 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
       <input type="range" class="layer-opacity" min="0" max="100" value="${initOpacity}" title="Opacity">
       <span class="layer-opacity-val">${initOpacity}%</span>
     </div>`;
-  item.querySelector('.layer-color').addEventListener('input', e => {
+  const colorEl = item.querySelector('.layer-color');
+  if (colorEl) colorEl.addEventListener('input', e => {
     setLayerColor(loadedLayers[id], e.target.value);
     if (opts.onColorChange) opts.onColorChange(e.target.value);
   });
-  item.querySelector('.layer-hollow').addEventListener('click', () => {
+  const hollowBtn = item.querySelector('.layer-hollow');
+  if (hollowBtn) hollowBtn.addEventListener('click', () => {
     const l = loadedLayers[id];
-    const hollowBtn = item.querySelector('.layer-hollow');
     const nowHollow = !l._hollow;
     _setLayerHollow(l, nowHollow);
     setLayerOpacity(l, parseInt(item.querySelector('.layer-opacity').value));
@@ -158,7 +163,7 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
   });
   item.querySelector('.layer-del').addEventListener('click', () => {
     const l = loadedLayers[id];
-    if (l._isOL) { if (window.olMap) olMap.removeLayer(l); }
+    if (l._isOL) { if (olMap) olMap.removeLayer(l); }
     else         { map.removeLayer(l); }
     delete loadedLayers[id];
     item.remove();
