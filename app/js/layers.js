@@ -31,8 +31,9 @@ const _NV_FILL_RATIO = 0.3;
 
 function setLayerOpacity(layer, pct) {
   if (!layer) return;
-  if (layer._isOL) { layer.setOpacity(pct / 100); return; }
   const o = pct / 100;
+  // A raster layer (WMS image, XYZ tiles) has setOpacity but no setStyle, so only the
+  // first branch fires; a vector layer also picks up stroke/fill opacity below.
   if (typeof layer.setOpacity === 'function') { try { layer.setOpacity(o); } catch(e) {} }
   if (typeof layer.setStyle === 'function') {
     const fo = layer._hollow ? 0 : o * _NV_FILL_RATIO;
@@ -52,7 +53,7 @@ function _setLayerHollow(layer, hollow) {
 
 function setLayerColor(layer, color) {
   if (!layer) return;
-  if (layer._isOL) return; // color not applicable to WMS overlay
+  if (layer._isRaster) return; // color is baked into a raster WMS image server-side
   if (typeof layer.setStyle === 'function')  { try { layer.setStyle({ color, fillColor: color }); } catch(e) {} }
   if (typeof layer.setIcon === 'function') {
     layer.setIcon(L.divIcon({
@@ -72,20 +73,14 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
   // Raster layers (WMS via OpenLayers, XYZ/WMTS/ArcGIS tiles) carry no client-side
   // style: colour and fill are baked into the image by the server. Only opacity
   // applies, so the colour and hollow controls are omitted rather than shown dead.
-  const isRaster    = layer._isOL === true || layer instanceof L.TileLayer;
+  const isRaster    = layer._isRaster === true || layer instanceof L.TileLayer;
   if (initHollow) _setLayerHollow(layer, true);
   // setLayerOpacity below will apply the correct stroke+fill based on _hollow
 
   const id = 'layer_' + (++layerCounter);
   loadedLayers[id] = layer;
-  // OL layers go to the OL map; Leaflet layers go to the Leaflet map
-  if (layer._isOL) {
-    if (olMap) olMap.addLayer(layer);
-    if (!initVisible) layer.setVisible(false);
-  } else {
-    layer.addTo(map);
-    if (!initVisible) map.removeLayer(layer);
-  }
+  layer.addTo(map);
+  if (!initVisible) map.removeLayer(layer);
 
   const empty = document.querySelector('#layer-list .layer-empty');
   if (empty) empty.remove();
@@ -129,13 +124,12 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
 
   item.querySelector('input[type=checkbox]').addEventListener('change', e => {
     const l = loadedLayers[id];
-    if (l._isOL) { l.setVisible(e.target.checked); }
-    else         { e.target.checked ? map.addLayer(l) : map.removeLayer(l); }
+    e.target.checked ? map.addLayer(l) : map.removeLayer(l);
     if (opts.onStateChange) opts.onStateChange({ opacity: parseInt(opacitySlider.value), visible: e.target.checked });
   });
   item.querySelector('.layer-zoom').addEventListener('click', () => {
     const l = loadedLayers[id];
-    if (l._isOL) { toastMsg('Zoom not available for WMS overlay', 'warn', undefined, 'sidebar'); return; }
+    if (l._isRaster) { toastMsg('Zoom not available for WMS overlay', 'warn', undefined, 'sidebar'); return; }
     try {
       const b = _collectBounds(l);
       if (b && b.isValid()) map.fitBounds(b, { padding: [30,30], animate: true });
@@ -163,8 +157,7 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
   });
   item.querySelector('.layer-del').addEventListener('click', () => {
     const l = loadedLayers[id];
-    if (l._isOL) { if (olMap) olMap.removeLayer(l); }
-    else         { map.removeLayer(l); }
+    map.removeLayer(l);
     delete loadedLayers[id];
     item.remove();
     if (!Object.keys(loadedLayers).length)
@@ -198,7 +191,7 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
     if (!fromItem) return;
     document.getElementById('layer-list').insertBefore(fromItem, item);
     const fl = loadedLayers[fromId];
-    if (fl && !fl._isOL) try { if (fl.bringToFront) fl.bringToFront(); } catch(e) {}
+    if (fl && !fl._isRaster) try { if (fl.bringToFront) fl.bringToFront(); } catch(e) {}
     const orderedStoreIds = [...document.querySelectorAll('#layer-list .layer-item')]
       .map(el => el.dataset.storeId).filter(Boolean);
     if (orderedStoreIds.length) _reorderStore(orderedStoreIds);
@@ -260,7 +253,7 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
   document.getElementById('layer-list').appendChild(item);
   setLayerOpacity(loadedLayers[id], initOpacity);
   if (opts.color) setLayerColor(loadedLayers[id], opts.color);
-  if (!layer._isOL && !opts.noZoom) {
+  if (!layer._isRaster && !opts.noZoom) {
     try {
       const bounds = _collectBounds(layer);
       if (bounds && bounds.isValid()) map.fitBounds(bounds, { padding: [20,20] });
@@ -821,7 +814,7 @@ function _startDissolve() {
   if (_kmlEditActive) { toastMsg('Finish KML edit first', 'warn', undefined, 'sidebar'); return; }
 
   const kmlEntries = Object.entries(loadedLayers).filter(([, l]) =>
-    l && !l._isOL && _flattenKMLLeafLayers(l).some(ll => ll instanceof L.Polygon)
+    l && !l._isRaster && _flattenKMLLeafLayers(l).some(ll => ll instanceof L.Polygon)
   );
   if (!kmlEntries.length) { toastMsg('No KML polygon layers loaded', 'warn', undefined, 'sidebar'); return; }
 

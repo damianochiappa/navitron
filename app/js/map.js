@@ -3,9 +3,6 @@
    MAP — init, basemaps, GPS, coord display, contextmenu
 ===================================================== */
 
-/* OL map instance (WMS reprojection overlay — initialized after Leaflet) */
-let olMap = null;
-
 /* ===== BASEMAP DEFINITIONS ===== */
 const BASEMAPS = {
   osm: L.tileLayer('https://tile.opentopomap.org/{z}/{x}/{y}.png', {
@@ -115,6 +112,37 @@ if (_plMeasure && _plMeasure.getContainer) _plMeasure.getContainer().classList.a
 
 const drawnItems = L.featureGroup().addTo(map);
 
+/* Leaflet.Draw derives a rectangle from a LatLngBounds, which is north-aligned by
+   construction: the two drag corners only set min/max lat and lon, so the map bearing
+   never enters the result and the shape drifts from the drag box whenever the map is
+   rotated. Rebuild the four corners in container (screen) space, which leaflet-rotate
+   makes bearing-aware, so the figure follows the pointer at any bearing. The result is
+   an L.Polygon, not an L.Rectangle: a rotated quad cannot survive in a LatLngBounds.
+   This matches what already happens across a save/reload cycle, where L.Rectangle is
+   serialized to a Polygon geometry and restored as an L.polygon. */
+function _screenAlignedRect(map, startLatLng, latlng) {
+  const a = map.latLngToContainerPoint(startLatLng);
+  const b = map.latLngToContainerPoint(latlng);
+  return [a, L.point(b.x, a.y), b, L.point(a.x, b.y)]
+    .map(pt => map.containerPointToLatLng(pt));
+}
+
+L.Draw.Rectangle.include({
+  _drawShape(latlng) {
+    const corners = _screenAlignedRect(this._map, this._startLatLng, latlng);
+    if (!this._shape) {
+      this._shape = new L.Polygon(corners, this.options.shapeOptions);
+      this._map.addLayer(this._shape);
+    } else {
+      this._shape.setLatLngs(corners);
+    }
+  },
+  _fireCreatedEvent() {
+    const poly = new L.Polygon(this._shape.getLatLngs(), this.options.shapeOptions);
+    L.Draw.SimpleShape.prototype._fireCreatedEvent.call(this, poly);
+  }
+});
+
 map.addControl(new L.Control.Draw({
   position: 'topleft',
   edit: { featureGroup: drawnItems, remove: false, poly: { allowIntersection: true } },
@@ -127,71 +155,32 @@ map.addControl(new L.Control.Draw({
   }
 }));
 
-/* ===== OPENLAYERS (WMS overlay with reprojection) ===== */
-/* Uses a separate div (#ol-map) inside #map at z-index 250 —
-   above Leaflet tile pane (200) but below overlay/marker/popup panes.
-   OL requests WMS in the server's native CRS (e.g. EPSG:4258) and
-   reprojects to EPSG:3857 for pixel-perfect alignment with the basemap.
-   All OL interactions are disabled; pointer-events:none on the div
-   ensures Leaflet handles every touch/click event. */
-(function _initOlMap() {
-  if (!window.ol) return;
+/* ===== OPENLAYERS PROJECTIONS (WFS GML reader) ===== */
+/* OpenLayers is used only as the GML reader for WFS responses (ol.format.WFS /
+   ol.format.GML32 in _WFSLayer). WMS overlays and basemaps render through Leaflet's
+   _WMSImageLayer, so no ol.Map is created — the ol.format readers work standalone and
+   need only the projections registered below. */
+(function _initOlProjections() {
+  if (!window.ol || !window.proj4) return;
 
-  // Register EPSG:4258 (ETRS89) and EPSG:6706 for Italian/EU WMS servers
-  if (window.proj4) {
-    proj4.defs('EPSG:4258', '+proj=longlat +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +no_defs');
-    proj4.defs('EPSG:6706', '+proj=longlat +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +no_defs');
-    ol.proj.proj4.register(proj4);
-    /* EPSG:4258 and EPSG:6706 are geographic CRS whose EPSG axis order is lat,lon. The
-       proj4 defs above carry no +axis, so register() leaves the OL projection on the
-       'enu' default and ImageWMS sends a lon,lat BBOX in a WMS 1.3.0 GetMap: the server
-       reads it as lat,lon and answers with an empty image. OL already knows how to swap
-       — it does so only when VERSION >= 1.3 and the orientation starts with 'ne' — so
-       only the orientation is missing. This build exposes no setAxisOrientation, and
-       putting +axis=neu on the proj4 def would also change the proj4 transforms OL uses
-       to reproject the image, so the field is set directly. Guarded: on 1.1.1 the swap
-       is never consulted, so this cannot affect that path. */
-    ['EPSG:4258', 'EPSG:6706'].forEach(c => {
-      try {
-        const p = ol.proj.get && ol.proj.get(c);
-        if (p && 'axisOrientation_' in p) p.axisOrientation_ = 'neu';
-      } catch(_) {}
-    });
-  }
-
-  const c = map.getCenter();
-  olMap = new ol.Map({
-    target: document.getElementById('ol-map'),
-    controls: [],
-    interactions: [],
-    layers: [],
-    view: new ol.View({
-      projection: 'EPSG:3857',
-      center: ol.proj.fromLonLat([c.lng, c.lat]),
-      resolution: 156543.033928041 / Math.pow(2, map.getZoom())
-    })
+  // Register EPSG:4258 (ETRS89) and EPSG:6706 for Italian/EU WFS servers
+  proj4.defs('EPSG:4258', '+proj=longlat +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +no_defs');
+  proj4.defs('EPSG:6706', '+proj=longlat +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +no_defs');
+  ol.proj.proj4.register(proj4);
+  /* EPSG:4258 and EPSG:6706 are geographic CRS whose EPSG axis order is lat,lon. The
+     proj4 defs above carry no +axis, so register() leaves the OL projection on the 'enu'
+     default, and readFeatures would take a short-form "EPSG:4258" posList as lon,lat.
+     Setting the orientation directly makes the reader interpret those pairs as lat,lon;
+     putting +axis=neu on the proj4 def would instead corrupt the proj4 transform. (urn
+     srsName forms already imply lat,lon, and MapServer cadastral GML falls through to the
+     manual parser, so this only affects short-form geographic responses from standard
+     WFS servers.) */
+  ['EPSG:4258', 'EPSG:6706'].forEach(c => {
+    try {
+      const p = ol.proj.get && ol.proj.get(c);
+      if (p && 'axisOrientation_' in p) p.axisOrientation_ = 'neu';
+    } catch(_) {}
   });
-
-  // Sync container size after layout stabilizes (Android can report wrong size at init)
-  setTimeout(() => { try { olMap.updateSize(); } catch(_) {} }, 300);
-
-  // Keep OL view in sync with Leaflet on every pan/zoom/rotate
-  function _syncOlView() {
-    if (!olMap) return;
-    const mc = map.getCenter();
-    const view = olMap.getView();
-    view.setCenter(ol.proj.fromLonLat([mc.lng, mc.lat]));
-    view.setResolution(156543.033928041 / Math.pow(2, map.getZoom()));
-    // Both count clockwise from north: leaflet-rotate getBearing() returns degrees
-    // (_bearing * RAD_TO_DEG), ol View.setRotation takes radians. Same direction, so
-    // the conversion carries no sign flip — negating it rotated the two maps opposite
-    // ways and they only agreed at bearing 0.
-    view.setRotation(map.getBearing() * Math.PI / 180);
-  }
-  map.on('move', _syncOlView);
-  map.on('rotate', _syncOlView);
-  // Apply initial bearing from saved view
-  _syncOlView();
 })();
 
 /* ===== DRAW TOOL ACTIVE FLAG ===== */
@@ -689,7 +678,6 @@ map.on('contextmenu', e => {
     clearTimeout(_rsTimer);
     _rsTimer = setTimeout(() => {
       try { map.invalidateSize(); } catch(_) {}
-      try { if (olMap) olMap.updateSize(); } catch(_) {}
     }, 250);
   }
   window.addEventListener('resize', _doResize);
@@ -762,12 +750,31 @@ function _revokeObj(u) {
   if (u && u.indexOf('blob:') === 0) { try { URL.revokeObjectURL(u); } catch(_) {} }
 }
 
+/* Turn a WMS error response body (HTML page or OGC ServiceException) into one short
+   readable line for a toast. Prefers the ServiceException text when present. */
+function _wmsErrorText(data) {
+  if (!data) return 'no response from server';
+  try {
+    const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+    const txt = new TextDecoder('utf-8', { fatal:false }).decode(bytes);
+    const se  = txt.match(/<ServiceException[^>]*>([\s\S]*?)<\/ServiceException>/i);
+    const raw = se ? se[1] : txt;
+    return raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160)
+           || 'unreadable service response';
+  } catch(_) { return 'unreadable service response'; }
+}
+
 const _WMSImageLayer = L.Layer.extend({
   options: { layers:'', version:'1.1.1', crs:null, format:'image/png',
              transparent:true, opacity:0.8, attribution:'' },
 
   initialize(url, options) {
-    this._wmsUrl = url.split('?')[0];
+    // Keep non-OGC query params (e.g. MapServer's mandatory ?map=/path.map) instead of
+    // dropping the whole query string — without them a MapServer endpoint returns an
+    // error page instead of an image. Same split the WFS layer uses.
+    const _sp = _splitOgcUrl(url);
+    this._wmsUrl = _sp.base.replace(/\/$/, '');
+    this._wmsPre = _sp.pre;
     L.setOptions(this, options);
     this._overlay = null;
     this._overlayUrl = null;   // object URL backing _overlay, revoked when replaced
@@ -776,13 +783,16 @@ const _WMSImageLayer = L.Layer.extend({
 
   onAdd(map) {
     this._map = map;
-    // Render the basemap image in a dedicated pane between the tile pane (200) and
-    // the overlay pane (400), so vector overlays (KML, drawings, WFS) always draw on
-    // top. Without this the image lands in the default overlayPane and re-stamps over
-    // sibling vectors on every moveend/zoomend (they flicker and vanish under it).
-    if (!map.getPane('wms-basemap-img')) {
-      const p = map.createPane('wms-basemap-img');
-      p.style.zIndex = 250;
+    // Render the image in a dedicated pane inside rotatePane so vectors (KML, drawings,
+    // WFS) draw on top. Without this the image lands in the default overlayPane and
+    // re-stamps over sibling vectors on every moveend/zoomend (they flicker and vanish
+    // under it). A basemap uses z-index 250 (above tiles at 200, below overlayPane 400);
+    // a WMS overlay uses 260, so it sits above the basemap but still below the vectors.
+    const paneName = this.options.pane || 'wms-basemap-img';
+    const paneZ    = this.options.paneZIndex || 250;
+    if (!map.getPane(paneName)) {
+      const p = map.createPane(paneName);
+      p.style.zIndex = paneZ;
       const rotatePane = map.getPane('rotatePane');
       if (rotatePane) rotatePane.appendChild(p);
     }
@@ -840,6 +850,7 @@ const _WMSImageLayer = L.Layer.extend({
     };
     p[isV13 ? 'CRS' : 'SRS'] = crsCode;
     return this._wmsUrl + '?' +
+      (this._wmsPre ? this._wmsPre + '&' : '') +
       Object.entries(p).map(([k,v]) => encodeURIComponent(k)+'='+encodeURIComponent(v)).join('&');
   },
 
@@ -855,27 +866,42 @@ const _WMSImageLayer = L.Layer.extend({
       // A response that lost the race must still release its object URL, otherwise the
       // fast-panning case leaks exactly the buffers this path exists to avoid copying.
       if (reqId !== this._reqId) { _revokeObj(imgUrl); return; }
+      this._errShown = false;   // a good frame clears the error latch for the next failure
       const prev    = this._overlay;
       const prevUrl = this._overlayUrl;
       this._overlay = L.imageOverlay(imgUrl, bounds, {
-        opacity:this.options.opacity, zIndex:200, pane:'wms-basemap-img'
+        opacity:this.options.opacity, zIndex:200, pane:this.options.pane || 'wms-basemap-img'
       }).addTo(map);
       this._overlayUrl = imgUrl;
       if (prev) try { map.removeLayer(prev); } catch(_) {}
       _revokeObj(prevUrl);
+    };
+    // Surface a broken service once per failure period (not on every pan) so the user sees
+    // why nothing is drawn instead of a silent blank. Latch clears on the next good frame.
+    const _notifyErr = detail => {
+      if (reqId !== this._reqId || this._errShown) return;
+      this._errShown = true;
+      const who = this.options.attribution ? '"' + this.options.attribution + '"' : 'layer';
+      toastMsg('WMS ' + who + ' — ' + detail, 'error');
     };
 
     if (window.cordova && cordova.plugin && cordova.plugin.http) {
       cordova.plugin.http.sendRequest(url, { method:'get', responseType:'arraybuffer' },
         res => {
           if (reqId !== this._reqId) return;
+          const hdrs = res.headers || {};
+          const ct = hdrs['content-type'] || hdrs['Content-Type'] || '';
+          // A non-image body (HTML error page or OGC ServiceException) means the server
+          // rejected the request — show its message rather than a blank. An empty header
+          // is treated as an image (some servers omit it), so a valid tile is never blocked.
+          if (ct && !/image\//i.test(ct)) { _notifyErr(_wmsErrorText(res.data)); return; }
           try {
             // Blob instead of a base64 data URL: no main-thread string building, no 33%
             // size inflation. See the same change in the OpenLayers imageLoadFunction.
             _show(URL.createObjectURL(new Blob([res.data], { type:'image/png' })));
           } catch(_) {}
         },
-        () => {}
+        err => { _notifyErr('request failed' + (err && err.status ? ' (HTTP ' + err.status + ')' : '')); }
       );
     } else {
       _show(url);
@@ -1729,9 +1755,9 @@ const _WFSLayer = L.Layer.extend({
   }
 });
 
-/* isOverlay: true  → WMS uses OpenLayers (reprojection support)
-              false → WMS uses Leaflet _WMSImageLayer (EPSG:3857 only, for basemap)
-   If omitted, auto-detected from cfg.useAs === 'overlay' (config restore). */
+/* isOverlay decides only the pane a WMS layer renders into (overlay z260 vs basemap
+   z250); both use the same Leaflet _WMSImageLayer. If omitted, auto-detected from
+   cfg.useAs === 'overlay' (config restore). */
 function _createLayer(cfg, token, isOverlay) {
   if (isOverlay === undefined) isOverlay = (cfg.useAs === 'overlay');
   const url = cfg.url.replace(/\/?$/, '');
@@ -1754,65 +1780,31 @@ function _createLayer(cfg, token, isOverlay) {
     }
     case 'wms': {
       if (!cfg.layers) throw new Error('Layer name required for WMS — use "Get layers"');
-      const wmsUrl = cfg.url.split('?')[0].split('#')[0].replace(/\/?$/, '');
+      // Keep the query string (MapServer ?map=...); _WMSImageLayer splits OGC params off.
+      const wmsUrl = cfg.url.split('#')[0];
 
-      /* ── Overlay: OpenLayers handles reprojection ──
-         OL requests GetMap in the server's native CRS (e.g. EPSG:4258)
-         and reprojects the image to EPSG:3857 for alignment with the basemap.
-         The Cordova HTTP plugin is used as imageLoadFunction for SSL bypass. */
-      if (isOverlay && olMap && window.ol) {
-        const ver      = cfg.version || '1.3.0';
-        const olSource = new ol.source.ImageWMS({
-          url: wmsUrl,
-          // TRANSPARENT defaults to FALSE in the WMS spec: without it the server returns
-          // an opaque image on BGCOLOR (white) that blankets everything underneath — fatal
-          // for an overlay, invisible as a basemap. FORMAT must be a format that carries
-          // an alpha channel for TRANSPARENT to mean anything.
-          params: { 'LAYERS': cfg.layers, 'VERSION': ver,
-                    'TRANSPARENT': true, 'FORMAT': 'image/png' },
-          projection: cfg.crs || 'EPSG:4326',
-          crossOrigin: 'anonymous',
-          imageLoadFunction: function(image, src) {
-            if (window.cordova && cordova.plugin && cordova.plugin.http) {
-              cordova.plugin.http.sendRequest(
-                src, { method: 'get', responseType: 'arraybuffer' },
-                res => {
-                  try {
-                    // Hand the bytes to the browser as a Blob rather than building a
-                    // base64 data URL: the old path walked the whole PNG in 8 KB slices
-                    // on the main thread and inflated it by a third, on every moveend.
-                    const objUrl = URL.createObjectURL(new Blob([res.data], { type: 'image/png' }));
-                    const img = image.getImage();
-                    // addEventListener, not onload: OL installs its own load/error
-                    // handlers on this element to drive its imageload* events.
-                    const _free = () => URL.revokeObjectURL(objUrl);
-                    img.addEventListener('load',  _free, { once: true });
-                    img.addEventListener('error', _free, { once: true });
-                    img.src = objUrl;
-                  } catch(_) { image.getImage().src = src; }
-                },
-                () => { image.getImage().src = src; }
-              );
-            } else {
-              image.getImage().src = src;
-            }
-          }
-        });
-        const olLayer = new ol.layer.Image({ source: olSource, opacity: 0.8 });
-        olLayer._isOL = true;
-        return olLayer;
-      }
-
-      /* ── Basemap or OL unavailable: Leaflet WMS ── */
+      /* Basemap and overlay both render through _WMSImageLayer (an L.imageOverlay in a
+         dedicated Leaflet pane). This keeps the overlay inside the pane hierarchy, so its
+         z-index is comparable with the basemap (250) and the vectors (400+): overlay at
+         260 sits above the basemap and below KML/drawings/WFS. The ws-crs dropdown is
+         already restricted to geographic CRS (+3857), the only cases this renderer can
+         honour without reprojection — the reprojection error over one viewport is far
+         below one pixel and the cadastral 6 m, so OpenLayers is not needed to draw. */
       const _crsCode = cfg.crs || 'EPSG:4326';
       const _isGeo   = /^EPSG:(4326|4258|6706)$/.test(_crsCode) || _crsCode === 'CRS:84';
-      return new _WMSImageLayer(wmsUrl, {
-        layers: cfg.layers, version: cfg.version || '1.1.1',
+      const lyr = new _WMSImageLayer(wmsUrl, {
+        layers: cfg.layers, version: cfg.version || (isOverlay ? '1.3.0' : '1.1.1'),
         transparent: true, format: 'image/png',
         attribution: cfg.name, opacity: 0.8,
         crs: _crsCode === 'EPSG:3857' ? L.CRS.EPSG3857 : L.CRS.EPSG4326,
-        crsCode: _crsCode, geoAxes: _isGeo
+        crsCode: _crsCode, geoAxes: _isGeo,
+        pane:       isOverlay ? 'wms-overlay' : 'wms-basemap-img',
+        paneZIndex: isOverlay ? 260 : 250
       });
+      // Mark overlays as raster so the legend omits colour/hollow controls and skips
+      // zoom-to-extent (a full-viewport image has no intrinsic bounds).
+      if (isOverlay) lyr._isRaster = true;
+      return lyr;
     }
     case 'wmts':
       return L.tileLayer(url, { attribution: cfg.name, maxZoom: 21 });
@@ -1977,7 +1969,7 @@ function _addBasemapUI(cfg) {
     }
 
     const hints = {
-      wms:    'Base endpoint only — e.g.<br><code style="font-size:10px;word-break:break-all">https://wms.cartografia.agenziaentrate.gov.it/inspire/wms/ows01.php</code><br>Paste GetCapabilities URL too — OGC params are dropped, MapServer <code>?map=...</code> is kept.',
+      wms:    'Base endpoint only — e.g.<br><code style="font-size:10px;word-break:break-all">https://wms.cartografia.agenziaentrate.gov.it/inspire/wms/ows01.php</code><br>Paste a GetCapabilities URL too — OGC params are dropped, MapServer <code>?map=...</code> is kept. Works with OGC WMS servers (GeoServer, MapServer, MapProxy, QGIS Server, deegree) in a geographic CRS (EPSG:4326/4258/6706) or Web Mercator (EPSG:3857). Click <b>Get layers</b> to auto-detect.',
       wfs:    'Base endpoint only — e.g.<br><code style="font-size:10px;word-break:break-all">https://wfs.cartografia.agenziaentrate.gov.it/inspire/wfs/owfs01.php</code><br>GetCapabilities populates layers, CRS and WFS version. Click <b>Get layers</b> before <b>Add</b> for legacy GML-only servers (e.g. PCN MapServer).',
       wmts:   'URL template with {z}/{x}/{y} &mdash; e.g. https://tile.openstreetmap.org/{z}/{x}/{y}.png',
       arcgis: 'URL up to .../MapServer &mdash; e.g. https://server/.../MapServer'
@@ -2306,8 +2298,7 @@ function _addBasemapUI(cfg) {
           });
         } else {
           // Fallback (addLayerToList not yet loaded): add directly
-          if (layer._isOL) { if (olMap) olMap.addLayer(layer); }
-          else              { layer.addTo(map); }
+          layer.addTo(map);
         }
         // Persist overlay so it is restored on next launch
         cfg.useAs = 'overlay';
