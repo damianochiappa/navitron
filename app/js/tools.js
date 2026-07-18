@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 'use strict';
 /* =====================================================
    TOOLS — sidebar, go-to, converter, credentials,
@@ -272,6 +273,15 @@ function _importConfig(cfg) {
             hollow:  c.hollow || false,
             isWfs:   c.type === 'wfs',
             silent:  true,
+            cfgId:   c.id,
+            zOrder:  c.zOrder,
+            /* Always a replay, never a fresh user action: this runs for the saved config,
+               for the bundled navitron-config.json (which ships 3 cadastre overlays) and
+               for a config file the user imports. Renumbering the legend from any of these
+               would overwrite the saved zOrder of layers that are still being restored —
+               the bundled fetch is async and lands mid-restore. Append, then let
+               _sortLegendByZOrder settle the whole list once. */
+            keepOrder: true,
             onStateChange: ({ opacity, visible }) => {
               c.opacity = opacity;
               c.visible = visible;

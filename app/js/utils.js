@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 'use strict';
 /* =====================================================
    UTILS — coordinate math, toast, file I/O

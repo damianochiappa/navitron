@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 'use strict';
 /* =====================================================
    MAP — init, basemaps, GPS, coord display, contextmenu
@@ -111,6 +112,37 @@ const _plMeasure = L.control.polylineMeasure({
 if (_plMeasure && _plMeasure.getContainer) _plMeasure.getContainer().classList.add('leaflet-polyline-measure');
 
 const drawnItems = L.featureGroup().addTo(map);
+
+/* Dedicated panes so user drawings sit ABOVE the cadastral WFS (panes 402/404) and the
+   WMS overlays: polygons (draw-poly 450) below lines (draw-line 460). Markers (points)
+   keep the native markerPane (z-index 600), already above everything here — so the final
+   drawing order is polygons < lines < points. Created lazily (rotatePane exists by the
+   time the first shape is drawn or restored). */
+function _ensureDrawPanes() {
+  [['draw-poly', 450], ['draw-line', 460]].forEach(([name, z]) => {
+    if (!map.getPane(name)) {
+      const p = map.createPane(name);
+      p.style.zIndex = z;
+      const rotatePane = map.getPane('rotatePane');
+      if (rotatePane) rotatePane.appendChild(p);
+    }
+  });
+  if (typeof _reorderMapPanes === 'function') _reorderMapPanes(map);
+}
+
+/* Route a shape to its drawing pane by geometry. Must run BEFORE drawnItems.addLayer:
+   Leaflet reads options.pane in onAdd to choose the renderer/pane. Markers are left as
+   they are so they render in the native markerPane (on top of everything). */
+function _assignDrawPane(layer) {
+  if (!layer || layer instanceof L.Marker) return;   // points stay in markerPane (600)
+  _ensureDrawPanes();
+  // L.Polygon extends L.Polyline and L.Rectangle extends L.Polygon → test Polygon first.
+  if (layer instanceof L.Polyline && !(layer instanceof L.Polygon)) {
+    layer.options.pane = 'draw-line';
+  } else {
+    layer.options.pane = 'draw-poly';   // Polygon / Rectangle / Circle / CircleMarker
+  }
+}
 
 /* Leaflet.Draw derives a rectangle from a LatLngBounds, which is north-aligned by
    construction: the two drag corners only set min/max lat and lon, so the map bearing
@@ -648,6 +680,7 @@ map.on('contextmenu', e => {
     map.closePopup();
     const layer = L.marker([lat, lng], { icon: makeEmojiIcon('pos') });
     layer._geoName = ''; layer._geoDesc = ''; layer._geoIcon = 'pos'; layer._geoColor = '#4f8ef7';
+    _assignDrawPane(layer);   // no-op for markers (kept for a single consistent add path)
     drawnItems.addLayer(layer);
     updateDrawStats(layer);
     _openDrawPopup(layer, 'marker');
@@ -750,12 +783,37 @@ function _revokeObj(u) {
   if (u && u.indexOf('blob:') === 0) { try { URL.revokeObjectURL(u); } catch(_) {} }
 }
 
+/* Diagnostic only: name a non-image WMS response in the console instead of letting it
+   be drawn as a broken image. Covers the servers the content-type check cannot catch —
+   those that omit the header, and those that return a ServiceException labelled
+   image/png. Never changes what is displayed. */
+function _warnIfNotImage(data, url) {
+  try {
+    const b = new Uint8Array(data);
+    if (b.length < 4) { console.warn('[navitron] WMS response is empty or truncated:', b.length, 'bytes —', url); return; }
+    const isPNG  = b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47;
+    const isJPEG = b[0] === 0xFF && b[1] === 0xD8;
+    const isGIF  = b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46;
+    // RIFF….WEBP and BMP too: a server legitimately answering in these formats must not
+    // be reported as an error just because the sniff list was too short.
+    const isWEBP = b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46;
+    const isBMP  = b[0] === 0x42 && b[1] === 0x4D;
+    if (isPNG || isJPEG || isGIF || isWEBP || isBMP) return;
+    console.warn('[navitron] WMS response is not an image —', _wmsErrorText(data), '|', url);
+  } catch(_) {}
+}
+
 /* Turn a WMS error response body (HTML page or OGC ServiceException) into one short
    readable line for a toast. Prefers the ServiceException text when present. */
 function _wmsErrorText(data) {
   if (!data) return 'no response from server';
   try {
-    const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+    const all = data instanceof Uint8Array ? data : new Uint8Array(data);
+    /* Only the head is decoded. A ServiceException message lives in the first few
+       hundred bytes, while this also runs on the per-response sniff — decoding a whole
+       multi-megabyte image to a string on every pan would cost far more than the
+       diagnostic is worth. */
+    const bytes = all.length > 4096 ? all.subarray(0, 4096) : all;
     const txt = new TextDecoder('utf-8', { fatal:false }).decode(bytes);
     const se  = txt.match(/<ServiceException[^>]*>([\s\S]*?)<\/ServiceException>/i);
     const raw = se ? se[1] : txt;
@@ -869,12 +927,27 @@ const _WMSImageLayer = L.Layer.extend({
       this._errShown = false;   // a good frame clears the error latch for the next failure
       const prev    = this._overlay;
       const prevUrl = this._overlayUrl;
-      this._overlay = L.imageOverlay(imgUrl, bounds, {
+      const next    = L.imageOverlay(imgUrl, bounds, {
         opacity:this.options.opacity, zIndex:200, pane:this.options.pane || 'wms-basemap-img'
-      }).addTo(map);
+      });
+      /* Keep the previous frame on screen until the new one has actually decoded and
+         painted. Adding the new image and dropping the old one in the same tick looked
+         like double buffering but was not: the browser had nothing to show in between,
+         which is the flicker seen on every pan and zoom. Handlers are attached before
+         addTo because an object URL can finish loading immediately. */
+      let swapped = false;
+      const _dropPrev = () => {
+        if (swapped) return;
+        swapped = true;
+        if (prev) try { map.removeLayer(prev); } catch(_) {}
+        _revokeObj(prevUrl);
+      };
+      next.on('load',  _dropPrev);
+      next.on('error', _dropPrev);      // a broken frame must not strand the old one
+      setTimeout(_dropPrev, 3000);      // safety net: never hold two frames indefinitely
+      next.addTo(map);
+      this._overlay    = next;
       this._overlayUrl = imgUrl;
-      if (prev) try { map.removeLayer(prev); } catch(_) {}
-      _revokeObj(prevUrl);
     };
     // Surface a broken service once per failure period (not on every pan) so the user sees
     // why nothing is drawn instead of a silent blank. Latch clears on the next good frame.
@@ -895,11 +968,18 @@ const _WMSImageLayer = L.Layer.extend({
           // rejected the request — show its message rather than a blank. An empty header
           // is treated as an image (some servers omit it), so a valid tile is never blocked.
           if (ct && !/image\//i.test(ct)) { _notifyErr(_wmsErrorText(res.data)); return; }
+          // The content-type check above misses two real cases: servers that omit the
+          // header, and servers that label a ServiceException as image/png. Sniff the
+          // magic bytes so an XML error is named in the console instead of being drawn
+          // as a broken image. Diagnostic only — the response is still shown as before.
+          _warnIfNotImage(res.data, url);
           try {
             // Blob instead of a base64 data URL: no main-thread string building, no 33%
             // size inflation. See the same change in the OpenLayers imageLoadFunction.
             _show(URL.createObjectURL(new Blob([res.data], { type:'image/png' })));
-          } catch(_) {}
+          } catch(e) {
+            console.warn('[navitron] WMS image could not be displayed:', e.name, url);
+          }
         },
         err => { _notifyErr('request failed' + (err && err.status ? ' (HTTP ' + err.status + ')' : '')); }
       );
@@ -929,36 +1009,43 @@ function _wfsLayerRemoved(wfsLayer) {
   _wfsCount = Math.max(0, _wfsCount - 1);
   const idx = _wfsRegistry.findIndex(e => e.layer === wfsLayer);
   if (idx !== -1) _wfsRegistry.splice(idx, 1);
-  const removedPane = wfsLayer.options.pane;
-  if (removedPane && map) {
-    const baseZ = { 'wfs-particelle': 402, 'wfs-fogli': 404 };
-    const paneEl = map.getPane(removedPane);
-    if (paneEl) paneEl.style.zIndex = baseZ[removedPane] || 403;
-  }
+  // No fixed z to restore any more: the legend order is re-applied for whatever is left.
+  if (map && typeof _applyOverlayZOrder === 'function') _applyOverlayZOrder();
   if (_selTarget === wfsLayer.options.typeName) _selModeOff();
   if (!_wfsCount && _selMode) _selModeOff();
   _selUpdateBadge();
 }
 
+/* The legend order is the only persisted truth about stacking, so this no longer owns any
+   base z-index: it re-applies the legend and then, ONLY while selection mode is on, lays a
+   temporary override on top so the badge target catches clicks whatever its position.
+   The override lives in the DOM only — it is never written to a store — and leaving
+   selection mode restores the user's order exactly. */
+const _SEL_Z = 448;   // above the legend band (max 445), below the drawings (draw-poly 450)
+
 function _updateWfsPaneZOrder() {
   if (!map) return;
-  const baseZ = { 'wfs-particelle': 402, 'wfs-fogli': 404 };
-  const targetEntry = _selMode ? _wfsRegistry.find(e => e.typeName === _selTarget) : null;
-  const targetUsesDefaultPane = !!(targetEntry && !targetEntry.layer.options.pane);
-  _wfsRegistry.forEach(e => {
-    const paneName = e.layer.options.pane;
-    if (!paneName) return;
-    const paneEl = map.getPane(paneName);
-    if (!paneEl) return;
-    // Target with its own pane → raise. Target in default overlayPane → push other WFS panes below 400 so target catches clicks.
-    if (_selMode && _selTarget === e.typeName) {
-      paneEl.style.zIndex = 410;
-    } else if (targetUsesDefaultPane) {
-      paneEl.style.zIndex = 395;
-    } else {
-      paneEl.style.zIndex = baseZ[paneName] || 403;
-    }
-  });
+  if (typeof _applyOverlayZOrder === 'function') _applyOverlayZOrder();
+  if (!_selMode) return;
+
+  const targetEntry = _wfsRegistry.find(e => e.typeName === _selTarget);
+  if (!targetEntry) return;
+  const targetPane = targetEntry.layer.options.pane;
+
+  if (targetPane) {
+    const paneEl = map.getPane(targetPane);
+    if (paneEl) paneEl.style.zIndex = _SEL_Z;
+  } else {
+    // Target sits in the shared overlayPane (400) and cannot be raised on its own, so the
+    // other WFS panes are pushed under it for the duration instead.
+    _wfsRegistry.forEach(e => {
+      const paneName = e.layer.options.pane;
+      if (!paneName || e.typeName === _selTarget) return;
+      const paneEl = map.getPane(paneName);
+      if (paneEl) paneEl.style.zIndex = 395;
+    });
+  }
+  if (typeof _reorderMapPanes === 'function') _reorderMapPanes(map);
 }
 
 function _selModeOff() {
@@ -2101,8 +2188,11 @@ function _addBasemapUI(cfg) {
           if (zMin !== null) parts.push('from zoom ' + zMin);
           if (zMax !== null) parts.push('up to zoom ' + zMax);
           if (!parts.length) return;
-          el.textContent = 'This layer is drawn ' + parts.join(', ') +
-                           ' — outside that range the server returns an empty image.';
+          // Bold-italic so the visibility window and the zoom reminder stand out. Text is
+          // built only from computed integers (no server-supplied strings) → innerHTML is safe.
+          el.innerHTML = '<b><i>This layer is drawn ' + parts.join(', ') +
+                         ' — outside that range the server returns an empty image. ' +
+                         'Zoom into your area of interest within this range to see it.</i></b>';
           el.style.display = '';
         } catch(_) { /* hint only: never break the capabilities flow */ }
       };
@@ -2277,6 +2367,7 @@ function _addBasemapUI(cfg) {
         if (typeof addLayerToList === 'function') {
           addLayerToList(layer, name, null, null, {
             isWfs: cfg.type === 'wfs',
+            cfgId: cfg.id,          // so a drag of this service persists into customMapConfigs
             onStateChange: ({ opacity, visible }) => {
               cfg.opacity = opacity;
               cfg.visible = visible;

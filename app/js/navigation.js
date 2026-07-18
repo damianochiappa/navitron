@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 'use strict';
 /* =====================================================
    NAVIGATION — OSRM routing, off-route detection, recalc
@@ -45,12 +46,56 @@
     navRoute = L.polyline(navRouteCoords, {
       color: '#4f8ef7', weight: 5, opacity: 0.85
     }).addTo(map);
+    _routeButtons(true);
   }
 
   function _clearRoute() {
     if (navRoute)      { map.removeLayer(navRoute);      navRoute = null; }
     if (navDestMarker) { map.removeLayer(navDestMarker); navDestMarker = null; }
     navRouteCoords = [];
+    _routeButtons(false);
+  }
+
+  /* Show/hide the route export + save-as-drawing buttons (only meaningful with a route). */
+  function _routeButtons(show) {
+    ['nav-export-kml-btn', 'nav-save-draw-btn'].forEach(bid => {
+      const b = document.getElementById(bid);
+      if (b) b.style.display = show ? '' : 'none';
+    });
+  }
+
+  /* Export the current route as a KML LineString. Built entirely on-device from the
+     coordinates already fetched, so it works with no connection. The route geometry is
+     derived from OpenStreetMap data — credit OSM/ODbL in the file for redistribution. */
+  function _exportRouteKML() {
+    if (!navRouteCoords.length) { toastMsg('No route to export', 'error', undefined, 'sidebar'); return; }
+    const coords = navRouteCoords.map(c => c[1].toFixed(6) + ',' + c[0].toFixed(6) + ',0').join(' ');
+    showPromptModal('File name:', 'route', fname => {
+      const base = (((fname || 'route').trim() || 'route')).replace(/\.kml$/i, '');
+      const nm = _xmlEsc(base);
+      const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n  <Document>\n    <name>${nm}</name>\n    <Placemark>\n      <name>${nm}</name>\n      <description>Route © OpenStreetMap contributors (ODbL); routing by OSRM / FOSSGIS</description>\n      <LineString>\n        <tessellate>1</tessellate>\n        <altitudeMode>clampToGround</altitudeMode>\n        <coordinates>${coords}</coordinates>\n      </LineString>\n    </Placemark>\n  </Document>\n</kml>`;
+      downloadFile(kml, base + '.kml', 'application/vnd.google-earth.kml+xml');
+    }, 'The .kml is saved to your device Downloads folder. Works offline.');
+  }
+
+  /* Copy the route into the drawings so it becomes a clickable, editable shape that
+     survives navigation stop and is drawn above the cadastre (draw-line pane). */
+  function _saveRouteAsDrawing() {
+    if (!navRouteCoords.length) { toastMsg('No route to save', 'error', undefined, 'sidebar'); return; }
+    showPromptModal('Save route as drawing — name:', 'Route', name => {
+      const nm = (name || 'Route').trim() || 'Route';
+      const lls = navRouteCoords.map(c => [c[0], c[1]]);
+      const color = '#4f8ef7';
+      const layer = L.polyline(lls, { color, weight: 4, opacity: 0.9 });
+      layer._geoName = nm; layer._geoDesc = ''; layer._geoIcon = 'pos';
+      layer._geoColor = color; layer._geoOpacity = 0.9; layer._geoType = 'polyline';
+      if (typeof _openDrawPopup === 'function') layer.on('click', () => _openDrawPopup(layer, layer._geoType));
+      if (typeof _assignDrawPane === 'function') _assignDrawPane(layer);
+      drawnItems.addLayer(layer);
+      if (typeof _saveDraws === 'function') _saveDraws();
+      if (typeof updateDrawStats === 'function') updateDrawStats(layer);
+      toastMsg('Route saved as drawing: ' + nm, 'success', undefined, 'sidebar');
+    });
   }
 
   /* ===== STATUS ===== */
@@ -211,13 +256,27 @@
     if (navPickMode) toastMsg('Tap on map to set destination', '', undefined, 'sidebar');
   });
 
-  map.on('click', e => {
-    if (!navPickMode) return;
+  function _pickAt(lat, lng) {
     navPickMode = false;
     pickBtn.classList.remove('active');
     map.getContainer().style.cursor = '';
-    const { lat, lng } = e.latlng;
     _setDestination(lat, lng, lat.toFixed(5) + ', ' + lng.toFixed(5));
+  }
+
+  map.on('click', e => {
+    if (!navPickMode) return;
+    _pickAt(e.latlng.lat, e.latlng.lng);
+  });
+
+  // Leaflet's map 'click' does not fire when the tap lands on an interactive overlay
+  // (WFS/KML/drawing) — the feature opens its popup instead, so the destination is never
+  // set. While picking, intercept that popup: close it and use its location as the
+  // destination. Only active in pick mode; normal taps keep their popups.
+  map.on('popupopen', e => {
+    if (!navPickMode) return;
+    const ll = e.popup.getLatLng();
+    map.closePopup(e.popup);
+    if (ll) _pickAt(ll.lat, ll.lng);
   });
 
   /* ===== ADDRESS INPUT with autocomplete ===== */
@@ -230,6 +289,10 @@
   document.getElementById('nav-start-btn').addEventListener('click', _startNav);
   document.getElementById('nav-stop-btn').addEventListener('click',  _stopNav);
   document.getElementById('nav-reset-btn').addEventListener('click', _resetNav);
+  const _ekBtn = document.getElementById('nav-export-kml-btn');
+  if (_ekBtn) _ekBtn.addEventListener('click', _exportRouteKML);
+  const _sdBtn = document.getElementById('nav-save-draw-btn');
+  if (_sdBtn) _sdBtn.addEventListener('click', _saveRouteAsDrawing);
 
   /* ===== NAV HUD UPDATE (called from map.js gpsUpdate) ===== */
   window.navHudUpdate = function (ll, spd) {

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 'use strict';
 /* =====================================================
    LAYERS — list management, file loading, KML enhance
@@ -64,6 +65,177 @@ function setLayerColor(layer, color) {
   if (typeof layer.eachLayer === 'function') layer.eachLayer(c => setLayerColor(c, color));
 }
 
+/* ── Per-overlay stacking panes (file overlays: KML / GeoJSON / GPX) ──
+   Each imported file overlay gets its own pane so the legend order can place it ABOVE or
+   BELOW the cadastral WFS and have that survive a restart — WITHOUT touching the
+   cadastre's fixed panes (wfs-particelle 402 / wfs-fogli 404) or its selection z-logic.
+   Only vector paths are routed into the pane; markers stay in the native markerPane so
+   pins remain on top. Reordering later just changes the pane's z-index (no re-render). */
+function _ensureOverlayPane(name) {
+  if (map.getPane(name)) return name;
+  const p = map.createPane(name);
+  const rotatePane = map.getPane('rotatePane');
+  if (rotatePane) rotatePane.appendChild(p);
+  return name;
+}
+
+function _assignOverlayPaneToPaths(layer, paneName) {
+  const leaves = _flattenKMLLeafLayers(layer);
+  const onMap = map.hasLayer(layer);
+  let moved = false;
+  leaves.forEach(l => { if (l instanceof L.Path) { l.options.pane = paneName; moved = true; } });
+  // Re-add so children pick up the new pane in onAdd — only when currently shown; when
+  // hidden the option is enough, it takes effect the next time the layer is added.
+  if (moved && onMap) { try { map.removeLayer(layer); layer.addTo(map); } catch(_) {} }
+}
+
+/* One continuous z scale for every legend entry: the list position IS the stacking
+   order, with no category barrier. Bottom of the list gets _Z_MIN, each entry above
+   it +2. The band sits between the basemap (250) and the drawings (draw-poly 450,
+   draw-line 460, markerPane 600), which stay out of the list and keep their fixed
+   panes. So a raster CAN be dragged over a vector: nothing here forbids it.
+   Capacity is (_Z_MAX - _Z_MIN) / 2 = 95 entries; beyond that the top ones clamp
+   together and stop being orderable relative to each other. */
+const _Z_MIN = 255;
+const _Z_MAX = 445;
+/* Leaflet's shared panes are never driven from the legend: writing a z-index into
+   overlayPane or markerPane would move every layer that lives there, not just the
+   entry being ordered. Only per-layer panes are safe to restack. */
+const _SHARED_PANES = ['mapPane','tilePane','overlayPane','shadowPane','markerPane','tooltipPane','popupPane','rotatePane'];
+
+function _applyOverlayZOrder() {
+  if (typeof map === 'undefined' || !map) return;
+  const list = document.getElementById('layer-list');
+  if (!list) return;
+  // Bottom-up: the last item in the DOM is the lowest layer on the map.
+  [...list.querySelectorAll('.layer-item')].reverse().forEach((el, i) => {
+    // Own stacking pane (file overlay / raster), else the layer's fixed pane (WFS
+    // cadastre: wfs-particelle / wfs-fogli) so it takes its place in the same scale.
+    const lyr  = loadedLayers[el.dataset.id];
+    const pane = el.dataset.ovPane || (lyr && lyr.options && lyr.options.pane);
+    if (!pane || _SHARED_PANES.indexOf(pane) !== -1) return;
+    const paneEl = map.getPane(pane);
+    if (!paneEl) return;
+    paneEl.style.zIndex = Math.min(_Z_MAX, _Z_MIN + 2 * i);
+  });
+  if (typeof _reorderMapPanes === 'function') _reorderMapPanes(map);
+}
+
+/* Where a newly loaded layer enters the list. Ranks are only an INSERTION default —
+   never a barrier: once placed, drag moves anything anywhere. Points are absent from
+   the scale on purpose, because _assignOverlayPaneToPaths leaves markers in the native
+   markerPane (600), so they already sit above every path without being ordered here. */
+const _RANK_RASTER = 0, _RANK_POLYGON = 1, _RANK_LINE = 2;
+
+function _layerRank(layer, isRaster) {
+  if (isRaster) return _RANK_RASTER;
+  let hasPolygon = false, hasLine = false;
+  _flattenKMLLeafLayers(layer).forEach(l => {
+    if (l instanceof L.Polygon)       hasPolygon = true;   // L.Polygon extends L.Polyline: test first
+    else if (l instanceof L.Polyline) hasLine    = true;
+  });
+  if (hasPolygon) return _RANK_POLYGON;   // mixed polygon+line KML counts as polygon
+  if (hasLine)    return _RANK_LINE;
+  return _RANK_POLYGON;                   // markers-only, or a WFS with no features loaded yet
+}
+
+/* Re-imported file: drop it back above the first entry whose saved order is lower. */
+function _insertByZOrder(list, item, zOrder) {
+  const anchor = [...list.querySelectorAll('.layer-item')]
+    .find(el => el.dataset.zOrder !== undefined && el.dataset.zOrder !== ''
+                && parseInt(el.dataset.zOrder) < zOrder);
+  if (anchor) list.insertBefore(item, anchor);
+  else        list.appendChild(item);
+}
+
+/* Insert just above the topmost entry of the same rank; failing that, just above the
+   topmost entry of a lower rank; failing that, at the bottom. Well defined even after
+   drag has scattered the ranks, and it never displaces anything already placed. */
+function _insertByRank(list, item, rank) {
+  const items = [...list.querySelectorAll('.layer-item')];
+  const sameRank = items.find(el => parseInt(el.dataset.rank) === rank);
+  const anchor   = sameRank || items.find(el => parseInt(el.dataset.rank) < rank);
+  if (anchor) list.insertBefore(item, anchor);
+  else        list.appendChild(item);
+}
+
+/* After any legend reorder: re-stack the panes, then persist ONE order across both
+   stores. Entries live in two places — file overlays in navitron_file_overlays, services
+   in navitron_custom_maps (customMapConfigs) — so a single zOrder per entry is what makes
+   an interleaved KML/raster/WFS order survive a restart. Bottom of the list is 0. */
+function _afterReorder() {
+  _applyOverlayZOrder();
+  const items = [...document.querySelectorAll('#layer-list .layer-item')];
+  const n = items.length;
+  let cfgTouched = false;
+
+  const zById = {};
+  items.forEach((el, i) => {
+    const z = n - 1 - i;                       // top of the list = highest zOrder
+    el.dataset.zOrder = z;
+    if (el.dataset.storeId) zById[el.dataset.storeId] = z;
+    if (el.dataset.cfgId && typeof customMapConfigs !== 'undefined') {
+      const c = customMapConfigs.find(e => e.id === el.dataset.cfgId);
+      if (c) { c.zOrder = z; cfgTouched = true; }
+    }
+  });
+
+  if (cfgTouched && typeof _autoSaveConfig === 'function') _autoSaveConfig();
+  const orderedStoreIds = items.map(el => el.dataset.storeId).filter(Boolean);
+  // One read + one write: the file store holds full file contents, so per-item updates
+  // would re-serialise every overlay on every drag.
+  if (orderedStoreIds.length) _reorderStore(orderedStoreIds, zById);
+}
+
+/* Startup replay. The three restore paths (file overlays, saved config, bundled config
+   fetch) are independent and partly async, so instead of trying to sequence them each
+   one just pokes this and the list is sorted once things settle. Entries that predate
+   zOrder are ranked by _legacyOrder so an upgrade does not visibly shuffle the map. */
+let _legendSortTimer = null;
+function _scheduleLegendSort() {
+  clearTimeout(_legendSortTimer);
+  _legendSortTimer = setTimeout(_sortLegendByZOrder, 200);
+}
+
+/* Reproduces the pre-zOrder visual truth: file overlays flagged above the cadastre sat at
+   447…, the cadastre/WFS at 402/404, the remaining file overlays at 399…, rasters at 260. */
+function _legacyOrder(el) {
+  if (el.dataset.legacyAbove === '1') return 4;
+  if (el.dataset.isWfs === '1')       return 3;
+  if (el.dataset.ovPane && el.dataset.rank !== String(_RANK_RASTER)) return 2;
+  return 1;
+}
+
+function _sortLegendByZOrder() {
+  const list = document.getElementById('layer-list');
+  if (!list) return;
+  const items = [...list.querySelectorAll('.layer-item')];
+  if (items.length < 2) { _applyOverlayZOrder(); return; }
+
+  const dom = new Map(items.map((el, i) => [el, i]));
+  const hasZ = el => el.dataset.zOrder !== undefined && el.dataset.zOrder !== '';
+
+  items.sort((a, b) => {
+    // Both migrated: saved order decides, highest zOrder on top.
+    if (hasZ(a) && hasZ(b)) return parseInt(b.dataset.zOrder) - parseInt(a.dataset.zOrder);
+    // Neither: fall back to how the old fixed z-bands rendered them.
+    if (!hasZ(a) && !hasZ(b)) {
+      const d = _legacyOrder(b) - _legacyOrder(a);
+      return d !== 0 ? d : dom.get(a) - dom.get(b);
+    }
+    return hasZ(a) ? -1 : 1;   // migrated entries sit above not-yet-migrated ones
+  });
+
+  items.forEach(el => list.appendChild(el));
+  /* Apply the stacking, but do NOT renumber and do NOT persist. The restore paths finish
+     at different moments — services at parse time, file overlays on a timer, the bundled
+     config on an async fetch — so a renumber here would compress whatever subset happens
+     to be present into 0..n-1 and destroy the saved numbering of everything still on its
+     way. The two sets would then collide on equal values and the order would look random.
+     Renumbering belongs to a real user action, when the list is complete by definition. */
+  _applyOverlayZOrder();
+}
+
 function addLayerToList(layer, name, rawContent, rawMime, opts) {
   opts = opts || {};
   const initOpacity = opts.opacity !== undefined ? opts.opacity : 80;
@@ -74,13 +246,34 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
   // style: colour and fill are baked into the image by the server. Only opacity
   // applies, so the colour and hollow controls are omitted rather than shown dead.
   const isRaster    = layer._isRaster === true || layer instanceof L.TileLayer;
+  // Zoom-to needs a vector extent; Export needs the original file bytes. Raster WMS
+  // overlays have neither, WFS overlays have no raw content — so those buttons are
+  // omitted for layers that cannot use them (rather than shown and failing on tap).
+  const hasRaw      = !!(rawContent && rawMime);
+  const isFileOverlay = hasRaw && !isRaster;   // KML / GeoJSON / GPX
   if (initHollow) _setLayerHollow(layer, true);
   // setLayerOpacity below will apply the correct stroke+fill based on _hollow
 
   const id = 'layer_' + (++layerCounter);
   loadedLayers[id] = layer;
+
+  // Every entry gets its own stacking pane, so any entry can be ordered against any
+  // other. Rasters must be routed BEFORE addTo: both L.TileLayer and _WMSImageLayer
+  // read options.pane in onAdd, so setting it afterwards would not take effect.
+  let ovPane = null;
+  if (isRaster) {
+    ovPane = _ensureOverlayPane('ov_' + id);
+    layer.options.pane = ovPane;
+    layer.options.paneZIndex = _Z_MIN;   // real value assigned by _applyOverlayZOrder below
+  }
+
   layer.addTo(map);
   if (!initVisible) map.removeLayer(layer);
+
+  if (isFileOverlay) {
+    ovPane = _ensureOverlayPane('ov_' + id);
+    _assignOverlayPaneToPaths(layer, ovPane);
+  }
 
   const empty = document.querySelector('#layer-list .layer-empty');
   if (empty) empty.remove();
@@ -89,6 +282,12 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
   item.className = 'layer-item';
   item.dataset.id = id;
   if (opts.storeId) item.dataset.storeId = opts.storeId;
+  if (opts.cfgId)   item.dataset.cfgId   = opts.cfgId;    // links a service entry to customMapConfigs
+  if (ovPane) item.dataset.ovPane = ovPane;
+  item.dataset.rank = _layerRank(layer, isRaster);
+  if (opts.isWfs) item.dataset.isWfs = '1';
+  if (opts.legacyAbove) item.dataset.legacyAbove = '1';   // pre-zOrder store, read once at migration
+  if (opts.zOrder !== undefined && opts.zOrder !== null) item.dataset.zOrder = opts.zOrder;
   item.setAttribute('draggable', 'true');
   item.innerHTML = `
     <span class="layer-drag" title="Drag to reorder">\u22EE</span>
@@ -96,10 +295,10 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
     <span class="layer-name" title="${name} (double-tap to rename)">${name}</span>
     ${isRaster ? '' : `<input type="color" class="layer-color" value="${initColor}" title="Layer color">`}
     ${isRaster ? '' : `<button class="layer-hollow${initHollow ? ' active' : ''}" title="Hollow — no fill">\u2205</button>`}
-    <button class="layer-zoom" title="Zoom to layer">\u29C6</button>
+    ${isRaster ? '' : '<button class="layer-zoom" title="Zoom to layer">\u29C6</button>'}
     ${opts.isWfs ? '<button class="layer-find" title="Find filtered features (ignore viewport)">\u2316</button>' : ''}
     ${opts.isWfs ? '<button class="layer-filter" title="Edit WFS filter">\u25BD</button>' : ''}
-    <button class="layer-exp"  title="Export file">\u2B07</button>
+    ${hasRaw ? '<button class="layer-exp"  title="Export file">\u2B07</button>' : ''}
     ${opts.isKml ? '<button class="layer-edit" title="Edit KML vertices">\u270F</button>' : ''}
     <button class="layer-del"  title="Remove">\u2715</button>
     <div class="layer-opacity-row">
@@ -127,9 +326,9 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
     e.target.checked ? map.addLayer(l) : map.removeLayer(l);
     if (opts.onStateChange) opts.onStateChange({ opacity: parseInt(opacitySlider.value), visible: e.target.checked });
   });
-  item.querySelector('.layer-zoom').addEventListener('click', () => {
+  const zoomBtn = item.querySelector('.layer-zoom');   // absent for raster WMS overlays
+  if (zoomBtn) zoomBtn.addEventListener('click', () => {
     const l = loadedLayers[id];
-    if (l._isRaster) { toastMsg('Zoom not available for WMS overlay', 'warn', undefined, 'sidebar'); return; }
     try {
       const b = _collectBounds(l);
       if (b && b.isValid()) map.fitBounds(b, { padding: [30,30], animate: true });
@@ -144,24 +343,27 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
     setLayerOpacity(loadedLayers[id], val);
     if (opts.onStateChange) opts.onStateChange({ opacity: val, visible: item.querySelector('input[type=checkbox]').checked });
   });
-  item.querySelector('.layer-exp').addEventListener('click', () => {
-    if (rawContent && rawMime) {
-      const baseName = name.replace(/\.[^.]+$/, '');
-      const ext = rawMime.includes('kml') ? '.kml' : rawMime.includes('json') ? '.geojson' : '.gpx';
-      showPromptModal('File name (without extension):', baseName, fname => {
-        const stripRe = new RegExp('\\' + ext + '$', 'i');
-        const stem = ((fname || baseName).trim() || baseName).replace(stripRe, '');
-        downloadFile(rawContent, stem + ext, rawMime);
-      });
-    } else { toastMsg('Original content not available', 'error', undefined, 'sidebar'); }
+  const expBtn = item.querySelector('.layer-exp');   // absent when there is no raw file content
+  if (expBtn) expBtn.addEventListener('click', () => {
+    const baseName = name.replace(/\.[^.]+$/, '');
+    const ext = rawMime.includes('kml') ? '.kml' : rawMime.includes('json') ? '.geojson' : '.gpx';
+    showPromptModal('File name (without extension):', baseName, fname => {
+      const stripRe = new RegExp('\\' + ext + '$', 'i');
+      const stem = ((fname || baseName).trim() || baseName).replace(stripRe, '');
+      downloadFile(rawContent, stem + ext, rawMime);
+    });
   });
   item.querySelector('.layer-del').addEventListener('click', () => {
     const l = loadedLayers[id];
     map.removeLayer(l);
     delete loadedLayers[id];
+    // Drop this overlay's dedicated stacking pane so panes don't accumulate.
+    if (item.dataset.ovPane) { const pe = map.getPane(item.dataset.ovPane); if (pe && pe.remove) pe.remove(); }
     item.remove();
-    if (!Object.keys(loadedLayers).length)
+    if (!Object.keys(loadedLayers).length) {
       document.getElementById('layer-list').innerHTML = '<p class="layer-empty">No layers loaded</p>';
+    }
+    _applyOverlayZOrder();
     if (opts.onDelete) opts.onDelete();
   });
 
@@ -191,10 +393,10 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
     if (!fromItem) return;
     document.getElementById('layer-list').insertBefore(fromItem, item);
     const fl = loadedLayers[fromId];
-    if (fl && !fl._isRaster) try { if (fl.bringToFront) fl.bringToFront(); } catch(e) {}
-    const orderedStoreIds = [...document.querySelectorAll('#layer-list .layer-item')]
-      .map(el => el.dataset.storeId).filter(Boolean);
-    if (orderedStoreIds.length) _reorderStore(orderedStoreIds);
+    // File overlays are stacked by dedicated pane z-index (legend zone, across the
+    // cadastre); same-pane overlays (extra WFS/KML in overlayPane) still use bringToFront.
+    if (fl && !fl._isRaster && !fl.options?.pane) try { if (fl.bringToFront) fl.bringToFront(); } catch(e) {}
+    _afterReorder();
   });
 
   // Rename on double-tap/dblclick
@@ -250,7 +452,15 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
     });
   }
 
-  document.getElementById('layer-list').appendChild(item);
+  const _list = document.getElementById('layer-list');
+  // keepOrder: a startup restore appends, then _sortLegendByZOrder puts the list right
+  // once every restore path has finished. A known zOrder (re-imported file) goes straight
+  // back to its place. Only a genuinely new layer is placed by rank.
+  if (opts.keepOrder)              { _list.appendChild(item); _scheduleLegendSort(); }
+  else if (item.dataset.zOrder)      _insertByZOrder(_list, item, parseInt(item.dataset.zOrder));
+  else                               _insertByRank(_list, item, parseInt(item.dataset.rank));
+  if (!opts.keepOrder) _afterReorder();
+  else _applyOverlayZOrder();
   setLayerOpacity(loadedLayers[id], initOpacity);
   if (opts.color) setLayerColor(loadedLayers[id], opts.color);
   if (!layer._isRaster && !opts.noZoom) {
@@ -359,15 +569,109 @@ function _loadOverlayStore() {
   try { return JSON.parse(localStorage.getItem(_OVL_KEY)) || []; } catch(_) { return []; }
 }
 function _saveOverlayStore(list) {
-  try { localStorage.setItem(_OVL_KEY, JSON.stringify(list)); } catch(_) {}
+  try { localStorage.setItem(_OVL_KEY, JSON.stringify(list)); }
+  catch(e) {
+    /* This store now holds metadata only — the file contents live in IndexedDB — so a
+       few hundred bytes per overlay. Hitting the localStorage quota here means the quota
+       is exhausted by something else entirely, not by an imported file. Console only, no
+       user-facing message. Read it with: adb logcat | grep -i chromium */
+    console.warn('[navitron] overlay metadata not saved (' + e.name + '): '
+                 + list.length + ' entries, ~' + Math.round(JSON.stringify(list).length / 1024)
+                 + ' KB. Layer order and styles will not survive a restart.');
+  }
 }
-function _persistOverlay(storeId, name, content, mime, opacity, visible, color, hollow) {
+/* ===== FILE CONTENTS (IndexedDB) =====
+   Only the metadata (id, name, order, style) lives in localStorage: it is small, and
+   keeping it synchronous means the whole ordering and restore logic stays unchanged.
+   The file contents — the part that used to blow the ~4 MB localStorage cap and make a
+   large KML silently vanish on the next launch — live here instead, keyed by store id.
+   Every call degrades to false/null rather than throwing, and the caller then falls back
+   to the old inline-in-localStorage behaviour, so a browser without IndexedDB still
+   works exactly as before. */
+const _IDB_NAME = 'navitron-overlays', _IDB_STORE = 'files';
+let _idbPromise = null;
+
+function _idb() {
+  if (_idbPromise) return _idbPromise;
+  _idbPromise = new Promise(resolve => {
+    try {
+      if (typeof indexedDB === 'undefined') { resolve(null); return; }
+      const req = indexedDB.open(_IDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(_IDB_STORE)) db.createObjectStore(_IDB_STORE);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror   = () => { console.warn('[navitron] IndexedDB unavailable, falling back to localStorage'); resolve(null); };
+    } catch(_) { resolve(null); }
+  });
+  return _idbPromise;
+}
+
+function _idbRun(mode, fn) {
+  return _idb().then(db => {
+    if (!db) return null;
+    return new Promise(resolve => {
+      try {
+        const tx = db.transaction(_IDB_STORE, mode);
+        const st = tx.objectStore(_IDB_STORE);
+        let result = null;
+        const req = fn(st);
+        if (req) req.onsuccess = () => { result = req.result; };
+        tx.oncomplete = () => resolve(result === undefined ? null : result);
+        tx.onerror    = () => resolve(null);
+        tx.onabort    = () => resolve(null);
+      } catch(_) { resolve(null); }
+    });
+  });
+}
+
+const _idbGet = id      => _idbRun('readonly',  st => st.get(id));
+const _idbDel = id      => _idbRun('readwrite', st => st.delete(id));
+const _idbKeys = ()     => _idbRun('readonly',  st => st.getAllKeys());
+function _idbPut(id, content) {
+  // put() resolves with the key on success, so a non-null result means it landed.
+  return _idbRun('readwrite', st => st.put(content, id)).then(r => r !== null);
+}
+
+/* Write a file's content to IndexedDB, falling back to inline localStorage when that is
+   not possible — which is exactly the pre-IndexedDB behaviour, cap included. */
+function _writeOverlayContent(storeId, content) {
+  return _idbPut(storeId, content).then(okIdb => {
+    if (okIdb) return true;
+    console.warn('[navitron] content not stored in IndexedDB, keeping it inline (4 MB cap applies)');
+    _updateOverlay(storeId, { content });
+    return false;
+  });
+}
+
+/* Read a file's content: inline when present (legacy entry or fallback), else IndexedDB. */
+function _readOverlayContent(entry) {
+  if (entry.content) return Promise.resolve(entry.content);
+  return _idbGet(entry.id);
+}
+
+/* Stable identity for a loaded file, so re-importing the same file is recognised as the
+   same overlay instead of a fresh one (which used to pile up duplicates in the store).
+   djb2 over the content: collisions are irrelevant here because name+mime must match too. */
+function _overlayKey(name, content, mime) {
+  let h = 5381;
+  for (let i = 0; i < content.length; i++) h = ((h << 5) + h + content.charCodeAt(i)) | 0;
+  return name + '|' + mime + '|' + content.length + '|' + (h >>> 0).toString(36);
+}
+
+function _persistOverlay(storeId, name, content, mime, opacity, visible, color, hollow, key, zOrder) {
   const list = _loadOverlayStore().filter(e => e.id !== storeId);
-  list.push({ id: storeId, name, content, mime, opacity, visible, color: color || null, hollow: hollow || false });
+  // No `content` here: it goes to IndexedDB below, so this store stays small.
+  list.push({ id: storeId, name, mime, opacity, visible, color: color || null,
+              hollow: hollow || false, key: key || null,
+              zOrder: (zOrder === undefined || zOrder === null) ? null : zOrder });
   _saveOverlayStore(list);
+  _writeOverlayContent(storeId, content);
 }
 function _removeOverlay(storeId) {
   _saveOverlayStore(_loadOverlayStore().filter(e => e.id !== storeId));
+  _idbDel(storeId);   // drop the content too, or IndexedDB would grow forever
 }
 function _updateOverlay(storeId, updates) {
   const list = _loadOverlayStore();
@@ -379,12 +683,13 @@ function _renameOverlay(storeId, newName) {
   const e = list.find(e => e.id === storeId);
   if (e) { e.name = newName; _saveOverlayStore(list); }
 }
-function _reorderStore(orderedStoreIds) {
+function _reorderStore(orderedStoreIds, zById) {
   const list = _loadOverlayStore();
   const byId = {};
   list.forEach(e => { byId[e.id] = e; });
   const reordered = orderedStoreIds.filter(id => byId[id]).map(id => byId[id]);
   list.forEach(e => { if (!orderedStoreIds.includes(e.id)) reordered.push(e); });
+  if (zById) reordered.forEach(e => { if (zById[e.id] !== undefined) e.zOrder = zById[e.id]; });
   _saveOverlayStore(reordered);
 }
 
@@ -469,15 +774,33 @@ function _restoreFileOverlays() {
   if (_overlaysRestored) return;
   _overlaysRestored = true;
   const list = _loadOverlayStore();
-  list.forEach(e => {
+  if (!list.length) { _scheduleLegendSort(); return; }
+
+  /* Every content is fetched BEFORE anything is added: IndexedDB reads resolve out of
+     order, and adding as they land would scramble the append order that the legacy
+     migration path relies on as a tiebreak. */
+  Promise.all(list.map(_readOverlayContent)).then(contents => _replayOverlays(list, contents));
+}
+
+function _replayOverlays(list, contents) {
+  let restored = 0, migrated = 0;
+  list.forEach((e, i) => {
+    const content = contents[i];
+    /* Content missing (IndexedDB unavailable this launch, or a stale entry): skip, but
+       KEEP the metadata — deleting it would turn a transient read failure into real
+       data loss. The entry gets another chance on the next launch. */
+    if (!content) { console.warn('[navitron] no content for overlay:', e.name, '(' + e.id + ')'); return; }
     try {
       const storeId = e.id;
-      _addContentLayer(e.content, e.name, e.mime, {
+      _addContentLayer(content, e.name, e.mime, {
         storeId,
         opacity:        e.opacity,
         visible:        e.visible,
         color:          e.color || null,
         hollow:         e.hollow || false,
+        keepOrder:      true,   // replay the saved order, don't re-apply rank placement
+        zOrder:         e.zOrder,
+        legacyAbove:    e.above === true,   // pre-zOrder store: used once to migrate
         noZoom:         true,
         silent:         true,
         onStateChange:  upd => _updateOverlay(storeId, upd),
@@ -486,11 +809,42 @@ function _restoreFileOverlays() {
         onRename:       newName => _renameOverlay(storeId, newName),
         onDelete:       () => _removeOverlay(storeId)
       });
+      restored++;
+      /* Legacy entry: the content was still inline in localStorage. Move it to
+         IndexedDB and strip it from the metadata ONLY once the write has confirmed,
+         so a failed migration never loses the file. */
+      if (e.content) {
+        migrated++;
+        _idbPut(e.id, e.content).then(okIdb => { if (okIdb) _updateOverlay(e.id, { content: null }); });
+      }
     } catch(err) {
-      _removeOverlay(e.id);
+      _removeOverlay(e.id);   // unparseable file: genuinely unusable, drop it
     }
   });
-  if (list.length) toastMsg(list.length + ' overlay' + (list.length > 1 ? 's' : '') + ' restored', 'success', undefined, 'sidebar');
+  if (migrated) console.info('[navitron] migrated ' + migrated + ' overlay(s) from localStorage to IndexedDB');
+  if (restored) toastMsg(restored + ' overlay' + (restored > 1 ? 's' : '') + ' restored', 'success', undefined, 'sidebar');
+  _scheduleLegendSort();
+  _idbPruneOrphans(list);
+}
+
+/* Contents whose metadata is gone (store cleared, entry removed while offline) would sit
+   in IndexedDB forever. Only runs when the metadata list is non-empty: an empty list is
+   indistinguishable from a failed read, and pruning on that would wipe everything. */
+function _idbPruneOrphans(list) {
+  if (!list.length) return;
+  _idbKeys().then(keys => {
+    if (!keys || !keys.length) return;
+    /* The set of known ids is re-read HERE, not captured before the await: metadata is
+       written synchronously ahead of its content, so a file imported while this lookup
+       was in flight is already in the store — but it would be absent from a snapshot
+       taken earlier, and pruning would then delete the content of a file the user just
+       loaded. Re-reading closes that window. */
+    const known = new Set(_loadOverlayStore().map(e => e.id));
+    if (!known.size) return;
+    const orphans = keys.filter(k => !known.has(k));
+    orphans.forEach(_idbDel);
+    if (orphans.length) console.info('[navitron] pruned ' + orphans.length + ' orphaned overlay content(s)');
+  });
 }
 document.addEventListener('deviceready', _restoreFileOverlays, { once: true });
 setTimeout(_restoreFileOverlays, 350);
@@ -513,10 +867,29 @@ fileInput.addEventListener('change', e => {
 });
 
 function _loadAndPersist(content, name, mime) {
-  const storeId = 'ovl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
-  _persistOverlay(storeId, name, content, mime, 80, true, null, false);
+  /* Re-importing a file the app already knows is a REFRESH, not a second copy: it keeps
+     its identity and the position the user dragged it to, instead of piling up duplicates
+     and jumping back to the top of its rank. If a copy is currently on the map it is
+     dropped first, so the reload replaces it in place. */
+  const key   = _overlayKey(name, content, mime);
+  const known = _loadOverlayStore().find(e => e.key === key);
+  const live  = known && document.querySelector(`#layer-list .layer-item[data-store-id="${known.id}"]`);
+  let zOrder  = known ? known.zOrder : null;
+
+  if (live) {
+    if (live.dataset.zOrder !== undefined && live.dataset.zOrder !== '') zOrder = parseInt(live.dataset.zOrder);
+    const liveId = live.dataset.id;
+    if (loadedLayers[liveId]) { try { map.removeLayer(loadedLayers[liveId]); } catch(_) {} delete loadedLayers[liveId]; }
+    if (live.dataset.ovPane) { const pe = map.getPane(live.dataset.ovPane); if (pe && pe.remove) pe.remove(); }
+    live.remove();
+  }
+
+  const storeId = known ? known.id
+                        : 'ovl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+  _persistOverlay(storeId, name, content, mime, 80, true, null, false, key, zOrder);
   _addContentLayer(content, name, mime, {
     storeId,
+    zOrder,   // when reclaimed, this places it back where it was instead of by rank
     onStateChange:  upd => _updateOverlay(storeId, upd),
     onColorChange:  color => _updateOverlay(storeId, { color }),
     onHollowChange: hollow => _updateOverlay(storeId, { hollow }),
@@ -773,11 +1146,16 @@ function _saveKmlEdit() {
       if (_op) setLayerOpacity(newLayer, parseInt(_op.value));
     }
     if (storeId) {
-      const list = _loadOverlayStore();
-      const entry = list.find(e => e.id === storeId);
-      if (entry) { entry.content = newKmlContent; _saveOverlayStore(list); }
+      /* Edited geometry goes back to the content store (IndexedDB, or inline on fallback).
+         The write is async now, so confirm only once it has actually landed: announcing
+         "saved" before the write completes would claim durability the edit does not yet
+         have. The old synchronous path could not report a failed write at all. */
+      _writeOverlayContent(storeId, newKmlContent)
+        .then(() => toastMsg('KML saved', 'success', undefined, 'sidebar'))
+        .catch(() => toastMsg('KML edited, but not saved to storage', 'warn', undefined, 'sidebar'));
+    } else {
+      toastMsg('KML saved', 'success', undefined, 'sidebar');
     }
-    toastMsg('KML saved', 'success', undefined, 'sidebar');
   } catch(err) {
     try { origLayer.addTo(map); } catch(_) {}
     loadedLayers[layerId] = origLayer;

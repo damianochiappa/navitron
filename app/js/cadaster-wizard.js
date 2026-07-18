@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Italian Cadaster Filter wizard (panel-cadaster).
    - Cascade Region/Province/Comune from PCN minambiente WFS (UA.UNITAAMMINISTRATIVE.*).
    - Sheet (foglio) dropdown from Agenzia Entrate INSPIRE WFS (CP:CadastralZoning), bbox=comune.

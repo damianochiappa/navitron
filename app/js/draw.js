@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 'use strict';
 /* =====================================================
    DRAW — marker icons, draw events, GPS track
@@ -198,6 +199,7 @@ function _openDrawPopup(layer, type) {
 /* ===== DRAW EVENTS ===== */
 map.on(L.Draw.Event.CREATED, e => {
   const layer = e.layer, type = e.layerType;
+  _assignDrawPane(layer);
   drawnItems.addLayer(layer);
   updateDrawStats(layer);
   layer._geoName = ''; layer._geoDesc = ''; layer._geoIcon = 'pos'; layer._geoColor = '#4f8ef7';
@@ -369,6 +371,7 @@ document.getElementById('import-geojson-input').addEventListener('change', funct
       layer._geoColor   = color;
       layer._geoOpacity = opacity;
       layer.on('click', () => _openDrawPopup(layer, layer._geoType));
+      _assignDrawPane(layer);
       drawnItems.addLayer(layer);
       imported++;
     });
@@ -480,6 +483,7 @@ document.getElementById('btn-track-toggle').addEventListener('click', () => {
         layer._geoOpacity = 0.85;
         layer._geoType    = 'polyline';
         layer.on('click', () => _openDrawPopup(layer, layer._geoType));
+        _assignDrawPane(layer);
         drawnItems.addLayer(layer);
         _saveDraws();
         updateDrawStats(layer);
@@ -600,6 +604,7 @@ function _loadDraws() {
       layer._geoColor   = color;
       layer._geoOpacity = opacity;
       layer.on('click', () => _openDrawPopup(layer, layer._geoType));
+      _assignDrawPane(layer);
       drawnItems.addLayer(layer);
     });
     updateDrawStats();
