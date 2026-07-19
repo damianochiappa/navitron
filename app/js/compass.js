@@ -7,6 +7,10 @@
 (function () {
 
   let _svgEl = null;
+  let _smooth = null;          // filtered heading, updated on every event
+  let _rendered = null;        // last heading actually written to the DOM
+  const _ALPHA = 0.25;         // low-pass, same figure the navigation code uses
+  const _RENDER_DELTA = 1.5;   // degrees below which a change is sensor noise
 
   /* ===== LEAFLET CONTROL ===== */
   const CompassControl = L.Control.extend({
@@ -32,6 +36,9 @@
         if (typeof gpsMarker !== 'undefined' && gpsMarker) {
           map.setView(gpsMarker.getLatLng(), map.getZoom(), { animate: true });
         }
+        // Keep the filter in step with the needle we just forced to north,
+        // otherwise the next sample can sit inside the threshold and never redraw.
+        _smooth = 0; _rendered = 0;
         _svgEl.style.transform = 'rotate(0deg)';
       });
       return div;
@@ -53,8 +60,31 @@
       heading = (360 - e.alpha) % 360;
     }
     if (heading == null || _svgEl == null) return;
-    window._compassHeading = heading;
-    _svgEl.style.transform = 'rotate(' + (-heading) + 'deg)';
+
+    /* deviceorientation fires at ~60 Hz and the magnetometer jitters by a
+       fraction of a degree even with the device flat on a table. Writing the
+       transform on every event therefore repainted this control continuously —
+       and with it the whole bottom-right corner it shares with the other
+       controls and the attribution, which is what read as a flicker with the
+       map completely still and GPS off.
+
+       The filter always updates, the DOM does not: dropping sub-threshold
+       samples from the calculation too would mean a slow rotation never
+       registered at all. The smoothed value accumulates until it has genuinely
+       moved, so noise stops writing while real rotation still gets through. */
+    if (_smooth == null) _smooth = heading;
+    else {
+      // Shortest signed delta, wrap-safe: without this, 359° -> 1° reads as
+      // -358 instead of +2 and the needle spins the long way round.
+      const d = ((heading - _smooth + 540) % 360) - 180;
+      _smooth = (_smooth + _ALPHA * d + 360) % 360;
+    }
+    window._compassHeading = _smooth;
+    if (_rendered == null ||
+        Math.abs(((_smooth - _rendered + 540) % 360) - 180) >= _RENDER_DELTA) {
+      _rendered = _smooth;
+      _svgEl.style.transform = 'rotate(' + (-_smooth) + 'deg)';
+    }
   }
 
   if (window.DeviceOrientationEvent) {

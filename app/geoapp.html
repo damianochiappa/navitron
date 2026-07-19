@@ -7,6 +7,48 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>Navitron</title>
+  <!-- Event recorder for the Help > diagnostic report. Loaded first, before any
+       other script, so failures during boot are captured too. Costs one array of
+       at most NV_LOG_MAX short strings; nothing is written to disk unless the
+       user asks for the report. -->
+  <script>
+  (function nvLogInit() {
+    const NV_LOG_MAX = 300;
+    const buf = [];
+    const t0 = Date.now();
+    function stamp() {
+      const s = Math.round((Date.now() - t0) / 1000);
+      return '+' + String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+    }
+    function push(level, parts) {
+      let msg;
+      try {
+        msg = parts.map(p => {
+          if (p instanceof Error) return p.name + ': ' + p.message;
+          if (typeof p === 'object' && p !== null) { try { return JSON.stringify(p).slice(0, 200); } catch (_) { return '[object]'; } }
+          return String(p);
+        }).join(' ');
+      } catch (_) { msg = '[unformattable]'; }
+      buf.push(stamp() + '  ' + level + '  ' + msg.slice(0, 400));
+      if (buf.length > NV_LOG_MAX) buf.shift();
+    }
+    window.nvLog = (...a) => push('INFO ', a);
+    window.nvLogLines = () => buf.slice();
+    window.nvLogSince = () => t0;
+
+    ['warn', 'error'].forEach(lvl => {
+      const orig = console[lvl] ? console[lvl].bind(console) : function () {};
+      console[lvl] = function (...a) { push(lvl === 'warn' ? 'WARN ' : 'ERROR', a); orig(...a); };
+    });
+    window.addEventListener('error', e => {
+      push('ERROR', [(e.message || 'script error'), '@', (e.filename || '?').split('/').pop() + ':' + (e.lineno || 0)]);
+    });
+    window.addEventListener('unhandledrejection', e => {
+      const r = e && e.reason;
+      push('ERROR', ['unhandled rejection:', r && r.message ? r.message : r]);
+    });
+  })();
+  </script>
   <link rel="manifest" href="manifest.json">
   <meta name="apple-mobile-web-app-title" content="Navitron">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -664,6 +706,7 @@
               <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Tile cache</h4>
               <div class="guide-item"><span class="guide-key">Auto-cache</span><span class="guide-desc">Every tile you view is cached automatically as you browse (the "volatile" cache), separate from your saved offline basemaps</span></div>
               <div class="guide-item"><span class="guide-key">Cache full (4 GB)</span><span class="guide-desc">At the 4 GB limit a prompt asks before freeing space — nothing is deleted without your OK. If your offline maps are under 3.5 GB, OK clears only the browsing tiles and keeps your offline maps. Cancel reminds you at the next app start</span></div>
+              <div class="guide-item"><span class="guide-key">Cache slow</span><span class="guide-desc">A large cache slows tile lookup down long before it reaches 4 GB, so the same prompt also appears when lookups get slow — measured against how fast this device was when its cache was small, not against a fixed size. The point it appears at therefore differs from device to device</span></div>
               <div class="guide-item"><span class="guide-key">Offline maps saturating</span><span class="guide-desc">If your saved offline maps reach 3.5 GB, the prompt instead offers to trim the oldest offline tiles down to 2.5 GB (~1 GB freed; maps stay listed, with gaps). Frequent prompts? Remove a whole map with its ✕</span></div>
               <div class="guide-item"><span class="guide-key">Older install</span><span class="guide-desc">Offline maps saved by a previous version use an older format; at 4 GB the app offers a one-time clean-up (re-download needed) so storage stays fast. Postponing keeps it slower and re-asks next launch</span></div>
               <div class="guide-item"><span class="guide-key">Cache tab</span><span class="guide-desc">Select KML extent + max zoom + map → tap "Convert cache to map": scans cache, downloads all missing tiles (zoom 1 to max), registers offline basemap in its own protected cache</span></div>
@@ -679,6 +722,17 @@
               <div class="guide-item"><span class="guide-key">Existing filter</span><span class="guide-desc">If a manual WFS filter is already active on Catasto Particelle (set via the &#9661; button in the layer list), running the wizard replaces it &mdash; a toast warns you when this happens.</span></div>
             </div>
 
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-6M9 15l3 3 3-3"/></svg>
+            Diagnostics
+          </div>
+          <div class="card-body">
+            <p class="hint">Saves a text file to Downloads describing what the app is doing right now: storage use, cache lookup speed, offline maps, active layers, and any warnings recorded since launch. Useful when something misbehaves and there is no way to see why. The file includes your current map position and the URLs of your active layers, so review it before sharing.</p>
+            <button class="btn btn-secondary" id="btn-diag-report" style="width:100%">Save diagnostic report</button>
           </div>
         </div>
       </div><!-- /panel-guide -->
@@ -965,7 +1019,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">2.0.4</span></div>
+      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">2.0.8</span></div>
       <div class="about-row"><span class="lbl">Author</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">License</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — Open Source</a></span></div>
       <div class="about-row"><span class="lbl">Engine</span><span class="val">Leaflet · Cordova · Android</span></div>
@@ -1146,6 +1200,101 @@ window.addEventListener('load', function nvCacheFullInit() {
   function isOver(m) {
     return m.usage >= LIMIT_BYTES || (m.quota > 0 && (m.usage / m.quota) >= FULL_RATIO);
   }
+
+  /* Byte budgets alone miss the case that actually hurts: the app turns sluggish
+     well below 4 GB, because every tile request goes through cache.match() on the
+     volatile cache (sw.js) and that lookup walks a disk-backed index whose cost
+     grows with the ENTRY COUNT. A fixed entry threshold would be the same mistake
+     as a fixed byte threshold, one step removed — the count a device stays fluid
+     at depends on its flash, its WebView and its free RAM, not on a number chosen
+     here. So measure the lookup on the device instead of declaring it.
+
+     The probe matches a key that cannot exist, which is the full-index path with
+     no data read. The baseline is the fastest probe ever seen on this device
+     (self-correcting: it drops again after a wipe). We report "slow" only when a
+     probe is both a large multiple of that baseline AND past an absolute floor,
+     so a fast device is never nagged over a few noisy milliseconds. The absolute
+     ceiling covers a cold start on an already-huge cache, where the baseline
+     would otherwise be recorded as slow and never trip the ratio. */
+  const PROBE_KEY      = '/__nv_cache_probe__';
+  const PROBE_BASE_KEY = 'nv_cache_probe_base';
+  /* Only the ratio is a real trigger, and it is the one that ports across
+     devices: it compares a device against ITS OWN best, so a phone whose healthy
+     lookup is 40 ms is judged by the same rule as one that does it in 2 ms.
+     The two absolute values bound it:
+       FLOOR — suppresses noise. It only ever binds on fast devices, where 4x a
+               sub-millisecond baseline is measurement jitter, not degradation.
+       CEIL  — a backstop for the one case the ratio cannot see: a first run on
+               an already-huge cache, where the baseline gets recorded slow and
+               nothing ever looks like a regression.
+
+     ALL THREE NUMBERS ARE UNVALIDATED ESTIMATES. No latency has been measured on
+     real hardware yet — the headless bench can exercise the decision logic but
+     its clock is virtual, so it cannot produce a real figure. Calibrate them from
+     the "Cache lookup" section of Help > Save diagnostic report, collected on
+     devices of different speeds, and delete this paragraph once they rest on data.
+     Note the asymmetry when doing so: a CEIL set too low fires on devices that
+     are merely modest rather than degraded, which is a false alarm on someone
+     else's phone; set too high it simply falls back to the ratio. */
+  const PROBE_FLOOR_MS = 15;    // below this, never call it slow (noise)
+  const PROBE_RATIO    = 4;     // ... or this many times the device's own best
+  const PROBE_CEIL_MS  = 120;   // ... or slow in absolute terms, whatever the baseline
+  async function probeLookupMs() {
+    try {
+      const c = await caches.open(VOLATILE_CACHE);
+      const t0 = performance.now();
+      await c.match(new Request(PROBE_KEY), { ignoreVary: true });
+      return performance.now() - t0;
+    } catch(_) { return null; }
+  }
+  /* Field data (Android 12, empty cache) showed a single probe is too noisy to
+     decide on: five samples came back 1.6 / 3.3 / 2.5 / 2.8 / 13.5 ms. The 13.5
+     outlier against a 2.8 baseline is already a 4.8x "regression" that never
+     happened. It also showed the very first probe of a session reads cold — 55 ms
+     against a steady state under 3 ms — so taking it as the baseline poisons the
+     ratio for the whole install. Hence: discard the first sample, use the median
+     of the rest, and let every caller share this one path so the baseline is
+     maintained no matter who probes. */
+  async function probeMedian(n) {
+    await probeLookupMs();                 // warm-up, deliberately discarded
+    const runs = [];
+    for (let i = 0; i < (n || 3); i++) {
+      const ms = await probeLookupMs();
+      if (ms != null) runs.push(ms);
+    }
+    if (!runs.length) return null;
+    runs.sort((a, b) => a - b);
+    return runs[Math.floor(runs.length / 2)];
+  }
+
+  async function isSlow() {
+    const ms = await probeMedian(3);
+    window._nvLastProbeMs = ms;
+    if (ms == null) return false;
+    let base = parseFloat(localStorage.getItem(PROBE_BASE_KEY));
+    if (!isFinite(base) || ms < base) {
+      base = ms;
+      try { localStorage.setItem(PROBE_BASE_KEY, String(base)); } catch(_) {}
+    }
+    // Record every sample: a single reading says little, the trend across a
+    // session is what shows the cache degrading. Cheap (one line in a capped
+    // buffer) and it is what makes the exported report worth reading.
+    if (typeof nvLog === 'function') {
+      nvLog('cache probe', ms.toFixed(1) + 'ms', 'baseline', base.toFixed(1) + 'ms',
+            'ratio', (ms / (base || 1)).toFixed(1) + 'x');
+    }
+    if (ms >= PROBE_CEIL_MS) return true;
+    return ms >= PROBE_FLOOR_MS && ms >= base * PROBE_RATIO;
+  }
+  /* Exposed for the Help > diagnostic report. It gets the median path, not the
+     raw one: the report used to sample probeLookupMs directly, which never
+     touched the stored baseline — so a report could show a 55 ms "best ever"
+     next to a 2.8 ms current reading and no ratio would ever be right again. */
+  window._nvCacheProbe = () => probeMedian(3);
+  window._nvCacheSlowCheck = isSlow;
+  window._nvCacheProbeBaseKey = PROBE_BASE_KEY;
+  window._nvVolatileCache = VOLATILE_CACHE;
+  window._nvOfflinePrefix = OFFLINE_PREFIX;
   function offlineCfgs() {
     return (typeof customMapConfigs !== 'undefined' ? customMapConfigs : []).filter(c => c && c.offline);
   }
@@ -1201,7 +1350,7 @@ window.addEventListener('load', function nvCacheFullInit() {
     return total;
   }
 
-  async function handleOver(m) {
+  async function handleOver(m, reason) {
     _busy = true;
     try {
       const names = await offlineCacheNames();
@@ -1232,12 +1381,20 @@ window.addEventListener('load', function nvCacheFullInit() {
       let offlineTiles = 0;
       cfgs.forEach(c => { if (nameSet.has(OFFLINE_PREFIX + c.id)) offlineTiles += (c.tiles || 0); });
       const phase2 = (offlineTiles * AVG_TILE) >= OFFLINE_LIMIT;
+      if (typeof nvLog === 'function') {
+        nvLog('cache prompt', 'reason=' + reason, 'offlineCfgs=' + cfgs.length,
+              'offlineCaches=' + names.length, 'offlineTiles=' + offlineTiles,
+              'sized=' + (offlineTiles * AVG_TILE / (1024 * 1024 * 1024)).toFixed(2) + 'GB',
+              '-> phase' + (phase2 ? 2 : 1));
+      }
 
       _prompting = true;
       let ok;
       if (!phase2) {
         ok = confirm(
-          'The map cache is full (4 GB).\n\n' +
+          (reason === 'slow'
+            ? 'The map cache has grown big enough to slow the app down.\n\n'
+            : 'The map cache is full (4 GB).\n\n') +
           'Tap OK to free space and keep things fast — this clears only the tiles saved automatically while browsing; your downloaded offline maps are kept.\n\n' +
           'Tap Cancel to decide later (we’ll remind you next time you open the app).\n\n' +
           'Seeing this often? Your offline maps may be taking the space — remove one with its ✕, or clear everything from the Cache tab.'
@@ -1255,10 +1412,15 @@ window.addEventListener('load', function nvCacheFullInit() {
       if (!phase2) {
         const wiped = await wipeVolatile();
         toast(wiped ? 'Browsing cache cleared' : 'Nothing to clear', wiped ? 'success' : '', 5000);
-        // If wiping the whole volatile cache didn't clear the over-condition, the
-        // pressure isn't the browsing cache — stop nagging until the next launch.
-        const after = await estimate();
-        if (after && isOver(after)) _deferred = true;
+        // If wiping the whole volatile cache didn't clear the condition that
+        // triggered us, the pressure isn't the browsing cache — stop nagging
+        // until the next launch. Re-test whichever condition actually fired.
+        if (reason === 'slow') {
+          if (await isSlow()) _deferred = true;
+        } else {
+          const after = await estimate();
+          if (after && isOver(after)) _deferred = true;
+        }
       } else {
         const tilesToFree = Math.max(1, offlineTiles - Math.floor(OFFLINE_TARGET / AVG_TILE));
         const n = await freeOldestOffline(tilesToFree);
@@ -1272,8 +1434,10 @@ window.addEventListener('load', function nvCacheFullInit() {
     if (_busy || _prompting || _deferred) return;
     const m = await estimate();
     if (!m) return;
-    if (!isOver(m)) return;
-    await handleOver(m);
+    // Byte budget first (cheap, no cache IO); only probe the lookup if we are
+    // still under it, so the common healthy case costs one estimate() call.
+    if (isOver(m)) return void await handleOver(m, 'full');
+    if (await isSlow()) await handleOver(m, 'slow');
   }
 
   setTimeout(check, FIRST_CHECK_MS);

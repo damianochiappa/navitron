@@ -375,6 +375,177 @@ function _downloadBrowser(blob, filename) {
 }
 
 
+/* ===== DIAGNOSTIC REPORT (Help > Save diagnostic report) =====
+   A plain-text snapshot meant to be read by a human, not parsed. Everything in
+   it comes from sources that are already tracked or free to query: no cache
+   enumeration, which on a large cache would freeze the UI for seconds —
+   precisely on the device where the report is most needed. */
+
+/* Never let one unresponsive source hang the whole report. A wedged Cache
+   Storage is precisely the state the report is wanted in, so a missing section
+   has to degrade to a note rather than to a button stuck on "Collecting…". */
+function _withTimeout(promise, ms, onTimeout) {
+  return Promise.race([
+    Promise.resolve(promise).catch(() => onTimeout),
+    new Promise(res => setTimeout(() => res(onTimeout), ms))
+  ]);
+}
+
+function _fmtBytes(b) {
+  if (b == null) return 'n/a';
+  const u = ['B', 'KB', 'MB', 'GB'];
+  let i = 0, v = b;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return v.toFixed(v >= 10 || i === 0 ? 0 : 2) + ' ' + u[i];
+}
+
+async function buildDiagReport() {
+  const L = [];
+  const sec = t => { L.push('', '─── ' + t + ' ' + '─'.repeat(Math.max(0, 56 - t.length)), ''); };
+  const kv  = (k, v) => L.push('  ' + String(k).padEnd(22) + (v === undefined || v === null ? 'n/a' : v));
+
+  L.push('NAVITRON — DIAGNOSTIC REPORT');
+  L.push(new Date().toString());
+
+  /* ---- build / environment ---- */
+  sec('App');
+  const verEl = document.getElementById('about-version');
+  kv('Version', verEl ? verEl.textContent.trim() : 'unknown');
+  kv('Cordova', window.cordova ? 'yes' : 'no (browser)');
+  kv('Native HTTP plugin', (window.cordova && cordova.plugin && cordova.plugin.http) ? 'yes' : 'no');
+  kv('Service worker', (navigator.serviceWorker && navigator.serviceWorker.controller) ? 'active' : 'not controlling');
+  kv('Screen', window.innerWidth + ' x ' + window.innerHeight + ' @' + (window.devicePixelRatio || 1) + 'x');
+  kv('Online', navigator.onLine ? 'yes' : 'no');
+  kv('User agent', navigator.userAgent);
+
+  /* ---- storage: the numbers behind the "cache is slowing down" prompt ---- */
+  sec('Storage');
+  let est = null;
+  try { est = await _withTimeout(navigator.storage.estimate(), 3000, null); } catch (_) {}
+  if (est) {
+    kv('Used', _fmtBytes(est.usage));
+    kv('Quota', _fmtBytes(est.quota));
+    kv('Used / quota', est.quota ? (100 * est.usage / est.quota).toFixed(1) + ' %' : 'n/a');
+  } else {
+    kv('Estimate', 'unavailable on this device');
+  }
+
+  // Lookup latency — the measurement the slow-cache prompt is based on. Sampled
+  // a few times because a single reading is noisy; the median is what matters.
+  /* Go through the app's own slow-check rather than probing independently: it
+     discards the cold first sample, takes a median, and — the part that matters —
+     maintains the stored baseline. A report that measured on its own left the
+     baseline untouched, so it could print a stale "best ever" that no longer had
+     anything to do with the current reading. */
+  let probeTxt = 'unavailable';
+  if (typeof window._nvCacheSlowCheck === 'function') {
+    const done = await _withTimeout(window._nvCacheSlowCheck().then(() => true), 6000, 'timeout');
+    if (done === 'timeout') {
+      kv('Cache lookup', 'stalled — no answer within 6 s');
+      L.push('  NOTE: cache storage is not responding. That is itself the finding:',
+             '        tile lookups are what the map waits on.');
+      probeTxt = 'reported';
+    } else {
+      const median = window._nvLastProbeMs;
+      const base = parseFloat(localStorage.getItem(window._nvCacheProbeBaseKey || 'nv_cache_probe_base'));
+      if (median != null) {
+        probeTxt = median.toFixed(1) + ' ms';
+        kv('Cache lookup (med3)', probeTxt);
+        kv('Best ever on device', isFinite(base) ? base.toFixed(1) + ' ms' : 'not recorded yet');
+        if (isFinite(base) && base > 0) kv('Slowdown vs best', (median / base).toFixed(1) + ' x');
+      }
+    }
+  }
+  if (probeTxt === 'unavailable') kv('Cache lookup', probeTxt);
+
+  /* ---- offline basemaps: from tracked counts, never enumerated ---- */
+  sec('Offline maps');
+  let names = [];
+  try {
+    const keys = await _withTimeout(caches.keys(), 3000, null);
+    if (keys) names = keys.filter(n => n.startsWith(window._nvOfflinePrefix || 'navitron-offline-'));
+    else L.push('  NOTE: cache list did not respond within 3 s.');
+  } catch (_) {}
+  const cfgs = (typeof customMapConfigs !== 'undefined' ? customMapConfigs : []).filter(c => c && c.offline);
+  kv('Saved maps', cfgs.length);
+  kv('Dedicated caches', names.length);
+  if (cfgs.length !== names.length) {
+    L.push('  NOTE: counts differ — maps without their own cache are in the old',
+           '        storage format and their tiles sit in the browsing cache.');
+  }
+  let totalTiles = 0;
+  cfgs.forEach(c => {
+    const hasCache = names.indexOf((window._nvOfflinePrefix || 'navitron-offline-') + c.id) !== -1;
+    totalTiles += (c.tiles || 0);
+    L.push('  · ' + (c.name || c.id) + ' — ' + (c.tiles || 0).toLocaleString() + ' tiles, ' +
+           (hasCache ? 'own cache' : 'NO own cache (legacy)'));
+  });
+  kv('Tracked tiles total', totalTiles.toLocaleString() + '  (~' + _fmtBytes(totalTiles * 15 * 1024) + ' est.)');
+
+  /* ---- what is actually on the map right now ---- */
+  sec('Map');
+  try {
+    const c = map.getCenter();
+    kv('Centre', c.lat.toFixed(5) + ', ' + c.lng.toFixed(5));
+    kv('Zoom', map.getZoom());
+    kv('Bearing', (typeof map.getBearing === 'function' ? map.getBearing() + '°' : 'n/a'));
+  } catch (_) { kv('Map', 'not initialised'); }
+
+  // Name each layer by its attribution — that is what the app already sets to the
+  // layer's own name. Long ones are provider credits (basemaps): truncate rather
+  // than drop them, or the basemap in use never appears in the report at all.
+  const layers = [];
+  try {
+    map.eachLayer(l => {
+      const o = l.options || {};
+      if (!o.attribution || typeof o.attribution !== 'string') return;
+      // Parse through the DOM so entities (&copy;, &amp;) come out as characters:
+      // a regex strips the tags but would leave "&copy;" sitting in the report.
+      const _tmp = document.createElement('div');
+      _tmp.innerHTML = o.attribution;
+      const clean = (_tmp.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!clean) return;
+      layers.push((clean.length > 70 ? clean.slice(0, 70) + '…' : clean) +
+                  (o.crsCode ? ' [' + o.crsCode + ']' : '') +
+                  (o.opacity !== undefined && o.opacity !== 1 ? ' (opacity ' + o.opacity + ')' : ''));
+    });
+  } catch (_) {}
+  kv('Active layers', layers.length);
+  layers.forEach(n => L.push('  · ' + n));
+
+  if (typeof _wfsRegistry !== 'undefined' && _wfsRegistry.length) {
+    kv('WFS layers', _wfsRegistry.length);
+    _wfsRegistry.forEach(e => L.push('  · ' + e.name + ' (' + e.typeName + ', min zoom ' + e.minZoom + ')'));
+  }
+
+  /* ---- the part that explains failures nobody saw happen ---- */
+  sec('Recent events (newest last)');
+  const lines = (typeof nvLogLines === 'function') ? nvLogLines() : [];
+  if (!lines.length) {
+    L.push('  Nothing recorded this session.');
+  } else {
+    const since = (typeof nvLogSince === 'function') ? new Date(nvLogSince()) : null;
+    L.push('  Session started ' + (since ? since.toLocaleTimeString() : '?') +
+           ' — times below are minutes:seconds since then.');
+    L.push('');
+    lines.forEach(l => L.push('  ' + l));
+  }
+
+  L.push('', '─'.repeat(62), 'End of report.');
+  return L.join('\n');
+}
+
+async function saveDiagReport() {
+  try {
+    toastMsg('Collecting diagnostics…', '', 2000);
+    const txt = await buildDiagReport();
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    downloadFile(txt, 'navitron-diagnostic-' + ts + '.txt', 'text/plain');
+  } catch (e) {
+    toastMsg('Could not build the report: ' + (e && e.message ? e.message : e), 'error');
+  }
+}
+
 
 /* ===== ADDRESS AUTOCOMPLETE ===== */
 function _attachAddressAutocomplete(input, onPick, opts) {

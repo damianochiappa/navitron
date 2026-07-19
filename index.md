@@ -26,7 +26,7 @@ App Android **open source per il catasto italiano**, pensata per il lavoro sul c
 
 Navitron ti aiuta a individuare un terreno partendo dai dati catastali — comune, foglio e particella — e a riconoscerlo sulla mappa satellitare. Con il GPS raggiungi la particella sul posto e ti orienti tra confini, fabbricati, strade e corsi d'acqua, anche senza connessione grazie alle mappe salvate per l'uso offline.
 
-I dati del Catasto Terreni dell'Agenzia delle Entrate — particelle e fogli — sono già preconfigurati e pronti all'uso (il Catasto Fabbricati non è incluso). Catasto e altri tematismi si sovrappongono alla mappa di sfondo che preferisci — satellitare, topografica o stradale — e di ogni livello puoi regolarne l'opacità (e il colore, per i livelli vettoriali come le particelle catastali) per confrontarlo con il terreno sottostante. Puoi aggiungere altri livelli cartografici indicandone l'indirizzo una sola volta: restano salvati e si ricaricano agli avvii successivi. Sono supportati servizi pubblici come la cartografia INSPIRE di IGM e Geoportale Nazionale e — con le relative credenziali — i servizi ArcGIS/ESRI della tua organizzazione, nei formati WMS, WFS, WMTS/XYZ e ArcGIS MapServer.
+I dati del Catasto Terreni dell'Agenzia delle Entrate — particelle e fogli — sono già preconfigurati e pronti all'uso (il Catasto Fabbricati non è precaricato, ma puoi aggiungerlo come overlay raster WMS, il formato in cui l'Agenzia delle Entrate lo distribuisce). Catasto e altri tematismi si sovrappongono alla mappa di sfondo che preferisci — satellitare, topografica o stradale — e di ogni livello puoi regolarne l'opacità (e il colore, per i livelli vettoriali come le particelle catastali) per confrontarlo con il terreno sottostante. Puoi aggiungere altri livelli cartografici indicandone l'indirizzo una sola volta: restano salvati e si ricaricano agli avvii successivi. Sono supportati servizi pubblici come la cartografia INSPIRE di IGM e Geoportale Nazionale e — con le relative credenziali — i servizi ArcGIS/ESRI della tua organizzazione, nei formati WMS, WFS, WMTS/XYZ e ArcGIS MapServer.
 
 **Per chi è pensato**
 
@@ -59,7 +59,7 @@ Per aggiornare, installa la release più recente sopra quella esistente: l'app s
 ## Funzionalità
 
 - **WFS** — interrogazione live di feature vettoriali con filtri, stile personalizzabile, export della selezione in KML; supporta WFS 2.0 e legacy 1.x con GML 3.1.1, encoding ISO-8859-1, endpoint MapServer `?map=...`; testato su Agenzia delle Entrate (INSPIRE), PCN (minambiente), IGM
-- **Catasto (Italia)** — etichette WMS + WFS di particelle e fogli del Catasto Terreni (Agenzia delle Entrate INSPIRE) precaricati; il Catasto Fabbricati non è incluso. PCN (minambiente) e IGM supportati via "Add web map"
+- **Catasto (Italia)** — etichette WMS + WFS di particelle e fogli del Catasto Terreni (Agenzia delle Entrate INSPIRE) precaricati; il Catasto Fabbricati non è precaricato, ma può essere aggiunto come overlay raster WMS — il formato in cui l'Agenzia delle Entrate lo pubblica. PCN (minambiente) e IGM supportati via "Add web map"
 - **Wizard catasto (Italia)** — menu a tendina a cascata da regione a foglio; filtro opzionale sulla particella applicato al layer CadastralParcel, con zoom automatico ed evidenziazione della selezione
 - **Cache tile offline** — scarica una qualsiasi basemap entro un confine KML per l'uso offline (Service Worker)
 - **Import KML/KMZ/GeoJSON/GPX** — gestione layer, editing dei vertici, popup degli attributi, dissolve dei poligoni (turf.js), rinomina, export

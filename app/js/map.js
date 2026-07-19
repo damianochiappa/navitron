@@ -401,13 +401,14 @@ function gpsUpdate(pos) {
   // Update speed in statusbar
   const spdItem = document.getElementById('sb-spd-item');
   const spdEl   = document.getElementById('sb-spd');
+  // Android reports a null speed on and off (stationary, or a network-provider
+  // fix), so toggling display here pulled the item in and out of the flex row on
+  // every fix and shunted the whole statusbar sideways — a visible flicker at
+  // ~1 Hz. Keep the item in flow and blank the value instead; the reserved width
+  // lives in the CSS, without it the text length alone still shifts the row.
   if (spdItem && spdEl) {
-    if (spd != null && spd >= 0) {
-      spdEl.textContent = (spd * 3.6).toFixed(1) + ' km/h';
-      spdItem.style.display = '';
-    } else {
-      spdItem.style.display = 'none';
-    }
+    spdEl.textContent = (spd != null && spd >= 0) ? (spd * 3.6).toFixed(1) + ' km/h' : '--';
+    spdItem.style.display = '';
   }
 
   // Update terrain elevation in statusbar (throttled)
@@ -956,6 +957,9 @@ const _WMSImageLayer = L.Layer.extend({
       this._errShown = true;
       const who = this.options.attribution ? '"' + this.options.attribution + '"' : 'layer';
       toastMsg('WMS ' + who + ' — ' + detail, 'error');
+      // Also record it: the toast is gone in seconds, the diagnostic report is
+      // what survives long enough to be looked at afterwards.
+      console.warn('[navitron] WMS ' + who + ' failed:', detail, '|', this._wmsUrl);
     };
 
     if (window.cordova && cordova.plugin && cordova.plugin.http) {
@@ -984,7 +988,11 @@ const _WMSImageLayer = L.Layer.extend({
         err => { _notifyErr('request failed' + (err && err.status ? ' (HTTP ' + err.status + ')' : '')); }
       );
     } else {
+      // Browser path (no cordova-plugin-http): the image is handed straight to
+      // the overlay, so a failed load has no response body to inspect. Report it
+      // anyway rather than leaving a blank pane with no explanation.
       _show(url);
+      if (this._overlay) this._overlay.once('error', () => _notifyErr('image could not be loaded'));
     }
   }
 });

@@ -581,3 +581,16 @@ document.getElementById('about-close').addEventListener('click', () => {
 document.getElementById('modal-about').addEventListener('click', function(e) {
   if (e.target === this) this.style.display = 'none';
 });
+
+/* ===== DIAGNOSTIC REPORT (Help panel) ===== */
+(function initDiagReport() {
+  const btn = document.getElementById('btn-diag-report');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.textContent = 'Collecting…';
+    try { await saveDiagReport(); }
+    finally { btn.disabled = false; btn.textContent = label; }
+  });
+})();

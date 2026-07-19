@@ -616,6 +616,23 @@ html, body {
 #statusbar .s-label { color: var(--text-muted); font-size: 9px; letter-spacing: .5px; text-transform: uppercase; }
 #statusbar .s-val { color: var(--text); font-weight: 700; font-size: 11px; }
 #zoom-level { color: var(--accent); font-weight: 700; }
+/* Reserve width for every statusbar value whose text changes length as it
+   updates. Without this the flex row re-lays out and the whole bar visibly jumps
+   sideways — with GPS on it was the speed field toggling, but panning alone is
+   enough: "16°5.698'E" and "16°15.698'E" are different widths, so the DM field
+   shifts the row on ordinary map movement with no GPS involved at all.
+   Figures are the measured worst case (extreme coordinates, 11px font) rounded
+   up. Over-reserving is safe: #sb-scroll scrolls horizontally. */
+#sb-lat, #sb-lon, #sb-dm, #sb-utm, #sb-mgrs,
+#sb-spd, #sb-elev, #sb-acc { display: inline-block; text-align: right; }
+#sb-lat  { min-width: 76px; }   /* -42.747000 */
+#sb-lon  { min-width: 80px; }   /* -116.094000 */
+#sb-dm   { min-width: 162px; }  /* 79°59.940'N 179°59.940'E */
+#sb-utm  { min-width: 126px; }  /* 33T 589536 4733300 */
+#sb-mgrs { min-width: 106px; }  /* 33TWH8953633300 */
+#sb-spd  { min-width: 58px; }
+#sb-elev { min-width: 44px; }
+#sb-acc  { min-width: 44px; }
 
 /* ===== MOBILE ===== */
 @media (max-width: 640px) {
@@ -715,6 +732,26 @@ html, body {
   border-radius: var(--r) !important;
   font-family: 'Courier New', monospace !important;
 }
+/* Give the control corners their own compositing layer. Without this they share
+   a raster region with the map underneath, so anything that repaints them — a
+   compass needle moving a degree, an attribution reflow — dirties that region
+   and the whole corner visibly flashes, with the map otherwise still. Reducing
+   the number of repaints (see compass.js) lowers the rate but cannot remove it:
+   the fix for a painting problem is to stop sharing the surface.
+   Scoped to the corners that hold controls, not to every Leaflet element: each
+   promoted layer costs GPU memory, and blanket promotion is its own problem. */
+.leaflet-control-container .leaflet-bottom.leaflet-right,
+.leaflet-control-container .leaflet-bottom.leaflet-left,
+.leaflet-control-container .leaflet-top.leaflet-right,
+.leaflet-control-container .leaflet-top.leaflet-left {
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+/* The needle animates its own transform, so it is worth isolating on its own:
+   its repaints then stop dirtying the buttons and the attribution beside it. */
+#compass-svg { will-change: transform; }
+
 .leaflet-bar {
   border-radius: var(--r-sm) !important;
   overflow: hidden;

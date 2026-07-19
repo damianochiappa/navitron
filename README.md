@@ -30,7 +30,7 @@ To update, just install the latest release over the existing one: the app update
 ## Features
 
 - **WFS** — live vector features with filtering, style customization, selection export to KML; supports WFS 2.0 + legacy 1.x with GML 3.1.1, ISO-8859-1 encoding, MapServer `?map=...` endpoints; tested on Agenzia delle Entrate (INSPIRE), PCN (minambiente), IGM
-- **Catasto (Italy)** — WMS labels + WFS Parcels and Sheets (Agenzia delle Entrate INSPIRE) preloaded; Catasto Fabbricati (buildings) is not included. PCN (minambiente) and IGM Italian WFS supported via "Add web map"
+- **Catasto (Italy)** — WMS labels + WFS Parcels and Sheets (Agenzia delle Entrate INSPIRE) preloaded; Catasto Fabbricati (buildings) is not preloaded, but can be added as a WMS raster overlay — the format the Agenzia delle Entrate publishes it in. PCN (minambiente) and IGM Italian WFS supported via "Add web map"
 - **Cadaster wizard (Italy)** — cascading dropdowns from region to sheet (foglio); optional parcel filter applied to the CadastralParcel layer, with automatic zoom and selection highlight
 - **Offline tile cache** — download any basemap within a KML boundary for offline use (Service Worker)
 - **KML/KMZ/GeoJSON/GPX import** — layer management, vertex editing, attribute popup, dissolve polygons (turf.js), rename, export
