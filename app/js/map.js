@@ -252,6 +252,20 @@ let _smoothBearing  = null;
 let _gpsViewCone    = null;
 let _prevGpsLL      = null;
 let _lastBearingLL  = null;
+let _lastMoveLL     = null;   // last position confirmed as real movement (moving gate)
+let _lastMoveT      = 0;      // timestamp of that confirmation
+let _isMoving       = false;  // movement gate: drives track-up rotation + view cone
+
+/* A stationary GPS still jitters by a few metres and reports a non-zero speed, so a
+   heading derived at standstill is noise — it spun the map and pointed the walking
+   cone in random directions. These thresholds gate BOTH the track-up rotation and the
+   cone: below them the heading is frozen (map keeps its last bearing) and the cone is
+   hidden. Hysteresis (ON > OFF) stops flicker at the boundary; MOVE_DIST is the
+   fallback when the device reports a null speed, which happens intermittently. */
+const _MOVE_ON_MS  = 1.0;   // m/s — above this: moving
+const _MOVE_OFF_MS = 0.5;   // m/s — below this: stopped (state held in between)
+const _MOVE_DIST_M = 6;     // m  — displacement counting as real movement when speed is null
+const _STOP_MS     = 4000;  // ms — no real progress this long (null speed) → stopped
 
 function _makeNavArrowIcon(heading) {
   const rot = (heading != null && isFinite(heading)) ? heading : 0;
@@ -414,74 +428,91 @@ function gpsUpdate(pos) {
   // Update terrain elevation in statusbar (throttled)
   if (typeof updateGpsElevation === 'function') updateGpsElevation(ll.lat, ll.lng);
 
-  // Rotate map to heading during active navigation (ground mode only)
-  // Primary: bearing computed from prev→current GPS position (reliable on Android).
-  // Fallback: pos.coords.heading if GPS moved < 8 m; then compass when stationary.
-  // Low-pass filter (alpha=0.25) smooths all sources.
+  // Rotate map to heading during active navigation (ground mode only), but only while
+  // genuinely moving. Travel direction comes from GPS course / position delta — NOT the
+  // magnetometer, which is unreliable on some devices and was the source of a wrong
+  // heading (the driving arrow, GPS-only, already proves the GPS path is sound). At a
+  // standstill the movement gate freezes the heading, so the map no longer spins on GPS
+  // jitter. Low-pass filter (alpha=0.55) smooths the result.
   if (!_isFlying && typeof navIsActive === 'function' && navIsActive()) {
-    let rawBrg = null;
-    const _ref = _lastBearingLL || _prevGpsLL;
-    if (_ref) {
-      const _d = ll.distanceTo(_ref);
-      if (_d >= 2) {
-        // Spherical bearing ref→current; accumulates across fixes so works at any speed
-        const dLng = (ll.lng - _ref.lng) * Math.PI / 180;
-        const lat1 = _ref.lat * Math.PI / 180;
-        const lat2 = ll.lat * Math.PI / 180;
-        rawBrg = (Math.atan2(
-          Math.sin(dLng) * Math.cos(lat2),
-          Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng)
-        ) * 180 / Math.PI + 360) % 360;
-        _lastBearingLL = ll;
-      }
+    // ── Movement gate: speed with hysteresis, displacement fallback for null speed ──
+    if (spd != null && spd >= _MOVE_ON_MS) {
+      _isMoving = true; _lastMoveLL = ll; _lastMoveT = ts;
+    } else if (spd != null && spd < _MOVE_OFF_MS) {
+      _isMoving = false;
+    } else if (_lastMoveLL) {
+      // speed null, or inside the hysteresis band → decide on real displacement
+      if (ll.distanceTo(_lastMoveLL) >= _MOVE_DIST_M) { _isMoving = true; _lastMoveLL = ll; _lastMoveT = ts; }
+      else if (ts - _lastMoveT > _STOP_MS)            { _isMoving = false; }
+      // otherwise keep the previous _isMoving
+    } else {
+      _lastMoveLL = ll; _lastMoveT = ts;
     }
-    if (rawBrg === null) {
+
+    if (_isMoving) {
+      let rawBrg = null;
       const _hdg = pos.coords.heading;
-      if (_hdg != null && isFinite(_hdg) && spd != null && spd >= 0.6) rawBrg = _hdg;
-      else if (typeof window._compassHeading === 'number') rawBrg = window._compassHeading;
-    }
-    if (rawBrg != null) {
-      if (_smoothBearing === null) {
-        _smoothBearing = rawBrg;
+      if (_hdg != null && isFinite(_hdg)) {
+        rawBrg = _hdg;                                   // GPS course — accurate while moving
       } else {
-        let diff = rawBrg - _smoothBearing;
-        if (diff > 180) diff -= 360;
-        if (diff < -180) diff += 360;
-        _smoothBearing = (_smoothBearing + 0.55 * diff + 360) % 360;
+        const _ref = _lastBearingLL || _prevGpsLL;
+        if (_ref && ll.distanceTo(_ref) >= _MOVE_DIST_M) {
+          // Spherical bearing ref→current
+          const dLng = (ll.lng - _ref.lng) * Math.PI / 180;
+          const lat1 = _ref.lat * Math.PI / 180;
+          const lat2 = ll.lat * Math.PI / 180;
+          rawBrg = (Math.atan2(
+            Math.sin(dLng) * Math.cos(lat2),
+            Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng)
+          ) * 180 / Math.PI + 360) % 360;
+        }
       }
-      // leaflet-rotate setBearing applies CSS rotate(+theta) clockwise.
-      // Track-up (heading at top of screen) requires CCW rotation, so negate.
-      map.setBearing(-_smoothBearing);
+      if (rawBrg != null) {
+        _lastBearingLL = ll;
+        if (_smoothBearing === null) {
+          _smoothBearing = rawBrg;
+        } else {
+          let diff = rawBrg - _smoothBearing;
+          if (diff > 180) diff -= 360;
+          if (diff < -180) diff += 360;
+          _smoothBearing = (_smoothBearing + 0.55 * diff + 360) % 360;
+        }
+        // leaflet-rotate setBearing applies CSS rotate(+theta) clockwise.
+        // Track-up (heading at top of screen) requires CCW rotation, so negate.
+        map.setBearing(-_smoothBearing);
+      }
     }
+    // stopped → do nothing: the map keeps its last bearing (no random spin)
   } else {
     _smoothBearing = null;
     _lastBearingLL = null;
+    _lastMoveLL    = null;
+    _isMoving      = false;
   }
 
-  // View cone: sector polygon showing direction of travel, only during walking navigation
+  // View cone: sector showing direction of travel, only while WALKING and actually
+  // moving. Hidden at standstill — with no real motion the direction is undefined, and
+  // drawing it from a jittery source pointed it the wrong way. Uses the same gated,
+  // GPS-derived _smoothBearing as the map rotation, so cone and view stay consistent.
   const _navProf = typeof window.navGetProfile === 'function' ? window.navGetProfile() : 'driving';
-  if (!_isFlying && typeof navIsActive === 'function' && navIsActive() && _navProf === 'walking') {
-    const _coneBrg = _smoothBearing != null ? _smoothBearing
-                   : (pos.coords.heading != null && isFinite(pos.coords.heading)) ? pos.coords.heading
-                   : typeof window._compassHeading === 'number' ? window._compassHeading : null;
-    if (_coneBrg != null) {
-      const _sectorPts = (function(c, brg, halfAng, rM, steps) {
-        const pts = [c];
-        const cosLat = Math.cos(c.lat * Math.PI / 180);
-        for (let i = 0; i <= steps; i++) {
-          const a = (brg - halfAng + (2 * halfAng * i / steps)) * Math.PI / 180;
-          pts.push(L.latLng(c.lat + (rM / 111320) * Math.cos(a),
-                            c.lng + (rM / (111320 * cosLat)) * Math.sin(a)));
-        }
-        pts.push(c);
-        return pts;
-      })(ll, _coneBrg, 35, 45, 12);
-      if (_gpsViewCone) map.removeLayer(_gpsViewCone);
-      _gpsViewCone = L.polygon(_sectorPts, {
-        color: '#4f8ef7', weight: 1, opacity: 0.7,
-        fillColor: '#4f8ef7', fillOpacity: 0.18
-      }).addTo(map);
-    }
+  if (!_isFlying && typeof navIsActive === 'function' && navIsActive()
+      && _navProf === 'walking' && _isMoving && _smoothBearing != null) {
+    const _sectorPts = (function(c, brg, halfAng, rM, steps) {
+      const pts = [c];
+      const cosLat = Math.cos(c.lat * Math.PI / 180);
+      for (let i = 0; i <= steps; i++) {
+        const a = (brg - halfAng + (2 * halfAng * i / steps)) * Math.PI / 180;
+        pts.push(L.latLng(c.lat + (rM / 111320) * Math.cos(a),
+                          c.lng + (rM / (111320 * cosLat)) * Math.sin(a)));
+      }
+      pts.push(c);
+      return pts;
+    })(ll, _smoothBearing, 35, 45, 12);
+    if (_gpsViewCone) map.removeLayer(_gpsViewCone);
+    _gpsViewCone = L.polygon(_sectorPts, {
+      color: '#4f8ef7', weight: 1, opacity: 0.7,
+      fillColor: '#4f8ef7', fillOpacity: 0.18
+    }).addTo(map);
   } else {
     if (_gpsViewCone) { map.removeLayer(_gpsViewCone); _gpsViewCone = null; }
   }

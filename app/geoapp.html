@@ -682,8 +682,8 @@
             <div class="guide-section">
               <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3,11 22,2 13,21 11,13 3,11"/></svg>Navigation</h4>
               <div class="guide-item"><span class="guide-key">Arrow btn ↘</span><span class="guide-desc">Set destination by address or map tap — choose car/walk/bike — OSRM routing</span></div>
-              <div class="guide-item"><span class="guide-key">Map bearing</span><span class="guide-desc">While navigation is active the map rotates to follow your direction of travel (GPS heading when moving, device compass when stationary). Flight mode is excluded. Use the compass to reset north manually.</span></div>
-              <div class="guide-item"><span class="guide-key">View cone</span><span class="guide-desc">In walking mode a 70° / 45 m sector is drawn around the GPS marker, oriented along your heading — shows the field of view ahead</span></div>
+              <div class="guide-item"><span class="guide-key">Map bearing</span><span class="guide-desc">While navigation is active the map rotates to follow your direction of travel, from GPS. When you stop it holds its last bearing (no more spinning). Flight mode is excluded. Tap the compass to reset north.</span></div>
+              <div class="guide-item"><span class="guide-key">View cone</span><span class="guide-desc">In walking mode a 70° / 45 m sector is drawn along your direction of travel while moving; it hides when you stop, since there is no travel direction then</span></div>
               <div class="guide-item"><span class="guide-key">Nav HUD</span><span class="guide-desc">A compact panel (bottom-left) shows live SPD, DST to destination and ETA while navigating. Draggable by its header, hides automatically when navigation ends</span></div>
               <div class="guide-item"><span class="guide-key">Off-route</span><span class="guide-desc">Auto-recalculates route if you deviate &gt;50 m</span></div>
               <div class="guide-item"><span class="guide-key">Export route</span><span class="guide-desc">Once a route is drawn, export it as KML (saved to Downloads, works offline) or save it as a drawing — a clickable line kept above the cadastre that survives after you stop navigating. Route geometry is derived from OpenStreetMap data (ODbL).</span></div>
@@ -694,7 +694,7 @@
 
             <div class="guide-section">
               <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="12,3 14,11 12,10 10,11" fill="currentColor"/></svg>Compass</h4>
-              <div class="guide-item"><span class="guide-key">Compass ↘</span><span class="guide-desc">Rotates with device heading — tap to reset map to north and re-center on GPS</span></div>
+              <div class="guide-item"><span class="guide-key">Compass ↘</span><span class="guide-desc">Points to north on the map and follows its rotation — tap to reset the map to north and re-center on GPS</span></div>
             </div>
 
             <div class="guide-section">
@@ -1019,7 +1019,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">2.0.8</span></div>
+      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">2.0.9</span></div>
       <div class="about-row"><span class="lbl">Author</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">License</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — Open Source</a></span></div>
       <div class="about-row"><span class="lbl">Engine</span><span class="val">Leaflet · Cordova · Android</span></div>
