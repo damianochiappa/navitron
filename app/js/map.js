@@ -376,7 +376,8 @@ function gpsUpdate(pos) {
   }
 
   // Pedestrian nav uses circleMarker + view cone (no arrow) — driving/cycling
-  // keep the rotated arrow. Walking gets directional info from the cone alone.
+  // keep the rotated arrow. On foot the map is already track-up, so the cone marks
+  // position and the forward sector instead of duplicating a heading arrow.
   const _navProfMarker = typeof window.navGetProfile === 'function' ? window.navGetProfile() : 'driving';
   if (_isFlying) {
     gpsMarker = L.marker(ll, { icon: _makeAirplaneIcon(pos.coords.heading), zIndexOffset: 1000 })
@@ -792,6 +793,10 @@ let wsCounter = 0, currentBasemapId = 'osm';
 // WFS server traits learned from GetCapabilities, keyed by URL: { jsonSupported, version }.
 // Consumed at Add time so legacy servers (e.g. MapServer PCN: WFS 1.1.0, GML-only) skip outputFormat=json.
 const _wfsCapsByUrl = {};
+// WMS min zoom derived from each layer's scale window (MaxScaleDenominator) at GetCapabilities,
+// keyed by `url|layerName`. Consumed at Add time so a WMS overlay stops requesting an empty
+// image below the range where the server actually draws it.
+const _wmsMinZoomByLayer = {};
 const customMapConfigs = [];
 
 /* Set SSL nocheck once at startup so WMS images load via native HTTP */
@@ -856,7 +861,7 @@ function _wmsErrorText(data) {
 
 const _WMSImageLayer = L.Layer.extend({
   options: { layers:'', version:'1.1.1', crs:null, format:'image/png',
-             transparent:true, opacity:0.8, attribution:'' },
+             transparent:true, opacity:0.8, attribution:'', minZoom:null },
 
   initialize(url, options) {
     // Keep non-OGC query params (e.g. MapServer's mandatory ?map=/path.map) instead of
@@ -950,6 +955,20 @@ const _WMSImageLayer = L.Layer.extend({
     const bounds = map.getBounds();
     const size   = map.getSize();
     if (!size.x || !size.y) return;
+    // Below the layer's scale window there is nothing to draw — the server would answer with an
+    // empty image. Skip the request (and drop any stale frame) and nudge the user to zoom in,
+    // mirroring the WFS minZoom behaviour. Only set for overlays, so a basemap is never blanked.
+    if (this.options.minZoom != null && map.getZoom() < this.options.minZoom) {
+      this._reqId++;   // invalidate any in-flight response so it can't paint a below-scale frame
+      this._removeOverlay();
+      const now = Date.now();
+      if (!this._lastZoomWarn || now - this._lastZoomWarn > 5000) {
+        const who = this.options.attribution ? '"' + this.options.attribution + '"' : 'WMS layer';
+        toastMsg('Zoom in to load ' + who, 'warn', undefined, 'map-quiet');
+        this._lastZoomWarn = now;
+      }
+      return;
+    }
     const reqId = ++this._reqId;
     const url   = this._buildUrl(bounds, size);
     const _show = imgUrl => {
@@ -1924,6 +1943,8 @@ function _createLayer(cfg, token, isOverlay) {
         attribution: cfg.name, opacity: 0.8,
         crs: _crsCode === 'EPSG:3857' ? L.CRS.EPSG3857 : L.CRS.EPSG4326,
         crsCode: _crsCode, geoAxes: _isGeo,
+        // Gate the request by scale window only for overlays — never blank a basemap.
+        minZoom: (isOverlay && cfg.minZoom != null) ? cfg.minZoom : null,
         pane:       isOverlay ? 'wms-overlay' : 'wms-basemap-img',
         paneZIndex: isOverlay ? 260 : 250
       });
@@ -2217,12 +2238,15 @@ function _addBasemapUI(cfg) {
         const el = document.getElementById('ws-scale-hint');
         if (!el) return;
         el.textContent = ''; el.style.display = 'none';
+        _wmsMinZoomByLayer[url + '|' + name] = null;   // cleared unless a scale window is found
         try {
           const w = _scaleWindow(name);
           if (!w) return;
           const lat  = map.getCenter().lat;
           const zMin = w.max ? Math.ceil(_scaleToZoom(w.max, lat))  : null;
           const zMax = w.min ? Math.floor(_scaleToZoom(w.min, lat)) : null;
+          // Remember the lower bound so Add can gate the overlay's requests to this range.
+          if (zMin != null && isFinite(zMin)) _wmsMinZoomByLayer[url + '|' + name] = zMin;
           const parts = [];
           if (zMin !== null) parts.push('from zoom ' + zMin);
           if (zMax !== null) parts.push('up to zoom ' + zMax);
@@ -2389,6 +2413,12 @@ function _addBasemapUI(cfg) {
       toastMsg('WFS filter: fill both attribute name and values, or leave both empty', 'warn');
     const cfg = { id, type, url, name, layers, version, crs, protected: isProtected };
     if (minZoom !== undefined) cfg.minZoom = minZoom;
+    // WMS overlays: adopt the min zoom derived from the layer's scale window (Get layers), so the
+    // layer stops requesting an empty image below its drawable range. Basemaps are never gated.
+    if (type === 'wms' && useAs === 'overlay') {
+      const _wz = _wmsMinZoomByLayer[url + '|' + layers];
+      if (_wz != null && isFinite(_wz)) cfg.minZoom = _wz;
+    }
     if (filterAttr && filterVals) { cfg.filterAttr = filterAttr; cfg.filterVals = filterVals; }
     // Carry over caps-derived traits only if the URL still matches what was inspected
     if (type === 'wfs' && _wfsCapsByUrl[url] && _wfsCapsByUrl[url].jsonSupported === false) cfg.jsonSupported = false;
@@ -2423,6 +2453,15 @@ function _addBasemapUI(cfg) {
             onFilterChange: ({ filterAttr, filterVals }) => {
               if (filterAttr) cfg.filterAttr = filterAttr; else delete cfg.filterAttr;
               if (filterVals) cfg.filterVals = filterVals; else delete cfg.filterVals;
+              if (typeof _autoSaveConfig === 'function') _autoSaveConfig();
+            },
+            // Persist the removal: without this the ✕ dropped the layer from the map and
+            // legend but left its cfg in customMapConfigs/localStorage, so it came back at
+            // the bottom of the legend on the next launch (the restore path in tools.js has
+            // this callback, the fresh-add path here was missing it).
+            onDelete: () => {
+              const idx = customMapConfigs.indexOf(cfg);
+              if (idx !== -1) customMapConfigs.splice(idx, 1);
               if (typeof _autoSaveConfig === 'function') _autoSaveConfig();
             }
           });

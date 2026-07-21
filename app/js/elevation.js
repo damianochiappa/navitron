@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 'use strict';
 /* =====================================================
-   ELEVATION — Open Topo Data API wrapper
+   ELEVATION — Open-Meteo Elevation API wrapper
    fetchElevation(lat, lon) → Promise<number|null>
    updateGpsElevation(lat, lon) — throttled, for GPS
 ===================================================== */

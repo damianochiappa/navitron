@@ -40,7 +40,14 @@ html, body {
 ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
 /* ===== LAYOUT ===== */
-#app { display: flex; flex-direction: column; height: 100vh; }
+#app {
+  display: flex; flex-direction: column; height: 100vh;
+  /* Keep the chrome (topbar, statusbar, map controls) inside the display safe area on
+     edge-to-edge Android/iOS. env() resolves to 0 where there is no inset, so this is a
+     no-op on devices that already lay the WebView out below the system bars. */
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+           env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+}
 
 /* ===== TOPBAR ===== */
 #topbar {
@@ -640,7 +647,10 @@ html, body {
   #topbar-coords { display: none; }
   #topbar-search { max-width: unset; }
   #sidebar:not(.collapsed) {
-    position: fixed; top: var(--topbar-h); left: 0; bottom: var(--status-h);
+    /* position:fixed escapes #app's safe-area padding, so fold the insets in here too. */
+    position: fixed; left: 0;
+    top: calc(env(safe-area-inset-top, 0px) + var(--topbar-h));
+    bottom: calc(env(safe-area-inset-bottom, 0px) + var(--status-h));
     z-index: 900;
     box-shadow: 4px 0 32px rgba(0,0,0,.7);
   }
