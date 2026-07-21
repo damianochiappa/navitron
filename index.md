@@ -111,6 +111,16 @@ Il progetto è GPL v3 perché usa [leaflet-rotate](https://github.com/Raruto/lea
 
 **Repository:** [github.com/damianochiappa/navitron](https://github.com/damianochiappa/navitron)
 
+---
+
+## Demo
+
+<p align="center">
+  <video src="NavitronGIS.mp4" width="80%" controls playsinline poster="catasto-particelle-wfs.png">
+    Il tuo browser non supporta il tag video. <a href="NavitronGIS.mp4">Scarica il video</a>.
+  </video>
+</p>
+
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
