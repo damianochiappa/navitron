@@ -1,4 +1,7 @@
-/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Navitron
+ * Copyright (C) 2026 Damiano Chiappa
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
 'use strict';
 /* =====================================================
    NAVIGATION — OSRM routing, off-route detection, recalc
