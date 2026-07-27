@@ -76,7 +76,7 @@
     showPromptModal('File name:', 'route', fname => {
       const base = (((fname || 'route').trim() || 'route')).replace(/\.kml$/i, '');
       const nm = _xmlEsc(base);
-      const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n  <Document>\n    <name>${nm}</name>\n    <Placemark>\n      <name>${nm}</name>\n      <description>Route © OpenStreetMap contributors (ODbL); routing by OSRM / FOSSGIS</description>\n      <LineString>\n        <tessellate>1</tessellate>\n        <altitudeMode>clampToGround</altitudeMode>\n        <coordinates>${coords}</coordinates>\n      </LineString>\n    </Placemark>\n  </Document>\n</kml>`;
+      const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n  <Document>\n    <name>${nm}</name>\n    <Placemark>\n      <name>${nm}</name>\n      <Style><LineStyle><color>fff78e4f</color><width>4</width></LineStyle></Style>\n      <description>Route © OpenStreetMap contributors (ODbL); routing by OSRM / FOSSGIS</description>\n      <LineString>\n        <tessellate>1</tessellate>\n        <altitudeMode>clampToGround</altitudeMode>\n        <coordinates>${coords}</coordinates>\n      </LineString>\n    </Placemark>\n  </Document>\n</kml>`;
       downloadFile(kml, base + '.kml', 'application/vnd.google-earth.kml+xml');
     }, 'The .kml is saved to your device Downloads folder. Works offline.');
   }
@@ -141,6 +141,9 @@
       const _hud = document.getElementById('nav-hud');
       if (_hud) { _hud.classList.remove('hidden'); _hud.style.zIndex = ++window._panelZTop; }
       if (typeof window._navSetFollowing === 'function') window._navSetFollowing(true);
+      // Navigation drives track-up rotation regardless of the manual compass lock —
+      // tell the compass so it reflects the active-rotation state.
+      if (typeof window._compassSetAuto === 'function') window._compassSetAuto(true);
       // Center on GPS, alza a zoom 17 se inferiore, altrimenti rispetta scelta utente
       const _z = Math.max(map.getZoom(), 17);
       map.setView(ll, _z, { animate: true });
@@ -153,6 +156,8 @@
   function _stopNav() {
     navActive = false;
     if (typeof window._navSetFollowing === 'function') window._navSetFollowing(true);
+    // Navigation ended: restore north unless the user has free rotation on.
+    if (typeof window._compassSetAuto === 'function') window._compassSetAuto(false);
     _clearRoute();
     _setStatus('', '');
     const _hud = document.getElementById('nav-hud');

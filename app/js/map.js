@@ -84,6 +84,17 @@ document.getElementById('nav-follow-btn').addEventListener('click', () => {
 
 L.control.scale({ maxWidth: 200, metric: true, imperial: false, position: 'bottomleft' }).addTo(map);
 
+/* Startup grace window: the bundled catasto layers all fire at once at a wide zoom, so
+   their "zoom in to load" hints and any slow-server errors arrive as an invasive burst
+   before the server has had time to answer. Swallow layer-load toasts for the first few
+   seconds; anything still wrong resurfaces normally on the next pan/zoom. */
+const _BOOT_QUIET_MS = 7000;
+const _bootAt = Date.now();
+function _loadToast(msg, type, dur, target) {
+  if (Date.now() - _bootAt < _BOOT_QUIET_MS) return;
+  toastMsg(msg, type, dur, target);
+}
+
 /* Landscape-only collapsible headers for Draw (topleft) and Measure (topright).
    Hidden in portrait via CSS; in landscape they toggle the corresponding stack. */
 const _makeToggle = (position, extraCls, title, svg, targetClass) => L.Control.extend({
@@ -243,6 +254,11 @@ document.addEventListener('visibilitychange', () => {
 
 /* ===== GPS CONTROL ===== */
 let gpsMarker = null, gpsCircle = null, gpsActive = false, gpsFirstFix = false, gpsWatchId = null;
+// Forgiving geolocation options: accept a fix up to 10s old for an instant first reading, and
+// allow a long window before a (non-fatal) timeout — a cold high-accuracy fix on some phones
+// (indoors, aggressive battery managers like Motorola) can take well over 20s.
+const _GPS_OPTS = { enableHighAccuracy: true, timeout: 60000, maximumAge: 10000 };
+let _gpsRetryTid = null;
 
 /* ── Flight detection ──
    AGL = GPS ellipsoid altitude − terrain elevation (orthometric ≈ geoid surface).
@@ -532,14 +548,40 @@ function gpsUpdate(pos) {
 
 function gpsError(err, btn) {
   const msgs = { 1: 'permission denied', 2: 'position unavailable', 3: 'timeout' };
-  toastMsg('GPS: ' + (msgs[err.code] || err.message), 'error');
-  gpsActive = false; btn.classList.remove('gps-on');
-  _releaseWakeLock();
-  if (gpsWatchId !== null) { navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; }
-  const accItem = document.getElementById('sb-acc-item');
-  if (accItem) accItem.style.display = 'none';
-  const elevItem = document.getElementById('sb-elev-item');
-  if (elevItem) elevItem.style.display = 'none';
+  // Only permission-denied is fatal — retrying is pointless. Stop the watch and turn GPS off.
+  if (err.code === 1) {
+    toastMsg('GPS: permission denied — Settings › Apps › Navitron › Permissions', 'error', undefined, 'sidebar');
+    gpsActive = false; btn.classList.remove('gps-on');
+    _releaseWakeLock();
+    if (_gpsRetryTid) { clearTimeout(_gpsRetryTid); _gpsRetryTid = null; }
+    if (gpsWatchId !== null) { navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; }
+    const accItem = document.getElementById('sb-acc-item');
+    if (accItem) accItem.style.display = 'none';
+    const elevItem = document.getElementById('sb-elev-item');
+    if (elevItem) elevItem.style.display = 'none';
+    return;
+  }
+  // Timeout / position-unavailable are TRANSIENT (cold fix, indoors, battery throttling): the
+  // fix may still arrive, so keep GPS "on" and restart the watch instead of giving up — the
+  // old code cleared the watch here, so a single slow first fix killed GPS until re-toggled.
+  // Restart after a short delay so an immediately-firing error can't spin a tight loop.
+  if (!gpsActive) return;
+  toastMsg('GPS: searching for a fix…', 'warn', undefined, 'map-quiet');
+  if (gpsWatchId !== null) { try { navigator.geolocation.clearWatch(gpsWatchId); } catch(_) {} gpsWatchId = null; }
+  if (_gpsRetryTid) clearTimeout(_gpsRetryTid);
+  _gpsRetryTid = setTimeout(() => {
+    _gpsRetryTid = null;
+    if (!gpsActive) return;   // user turned GPS off during the delay
+    gpsWatchId = navigator.geolocation.watchPosition(pos => gpsUpdate(pos), e => gpsError(e, btn), _GPS_OPTS);
+  }, 5000);
+}
+
+/* Start (or restart) the position watch. One path for both the GPS toggle and the
+   transient-error retry. Guards gpsActive so a late callback can't re-arm a stopped GPS. */
+function _startGpsWatch(btn) {
+  if (!gpsActive) return;
+  if (gpsWatchId !== null) { try { navigator.geolocation.clearWatch(gpsWatchId); } catch(_) {} }
+  gpsWatchId = navigator.geolocation.watchPosition(pos => gpsUpdate(pos), err => gpsError(err, btn), _GPS_OPTS);
 }
 
 function toggleGPS(btn) {
@@ -548,15 +590,23 @@ function toggleGPS(btn) {
     gpsActive = true; gpsFirstFix = false;
     btn.classList.add('gps-on');
     _acquireWakeLock();
-    gpsWatchId = navigator.geolocation.watchPosition(
-      pos => gpsUpdate(pos),
-      err => gpsError(err, btn),
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
-    );
+    // If device location is off, ask Android to turn it on (system one-tap dialog) before
+    // watching — this is the fix for "GPS on in the app but nothing detected until I
+    // re-toggle". Falls back to watching directly in the browser or without Play Services.
+    const _la = window.cordova && cordova.plugins && cordova.plugins.locationAccuracy;
+    if (_la && _la.request) {
+      // BALANCED (not HIGH): the dialog appears only when device location is fully OFF —
+      // if it's already on in any mode we proceed silently. High-accuracy GPS is still
+      // requested by the watch itself via enableHighAccuracy.
+      _la.request(() => _startGpsWatch(btn), () => _startGpsWatch(btn), _la.REQUEST_PRIORITY_BALANCED_POWER_ACCURACY);
+    } else {
+      _startGpsWatch(btn);
+    }
   } else {
     gpsActive = false;
     btn.classList.remove('gps-on');
     _releaseWakeLock();
+    if (_gpsRetryTid) { clearTimeout(_gpsRetryTid); _gpsRetryTid = null; }
     if (gpsWatchId !== null) { navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; }
     if (gpsMarker) { map.removeLayer(gpsMarker); gpsMarker = null; }
     if (gpsCircle) { map.removeLayer(gpsCircle); gpsCircle = null; }
@@ -666,10 +716,22 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 window.addEventListener('pagehide', _saveView);
 document.addEventListener('pause', _saveView, false);
 
+/* Let a long-press select/copy popup text: stop the contextmenu (long-press) from
+   reaching the map, so Leaflet neither opens the coordinate menu nor preventDefaults
+   the browser's native text selection. Bound once; every popup gets it on open. */
+map.on('popupopen', e => {
+  const node = e.popup && e.popup._container;
+  if (node) L.DomEvent.on(node, 'contextmenu', L.DomEvent.stopPropagation);
+});
+
 /* ===== CONTEXTMENU ===== */
 map.on('contextmenu', e => {
   const pmActive = !!document.querySelector('.polyline-measure-controlOnBgColor');
   if (mapToolActive || pmActive) return;
+  // Belt-and-suspenders: if a long-press inside a popup still reaches here, it is the
+  // user selecting text — don't open the coordinate menu over the selection.
+  const oe = e.originalEvent;
+  if (oe && oe.target && oe.target.closest && oe.target.closest('.leaflet-popup')) return;
   const { lat, lng } = e.latlng;
   const dd   = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
   const dm   = coordToDM(lat, lng);
@@ -967,7 +1029,7 @@ const _WMSImageLayer = L.Layer.extend({
       const now = Date.now();
       if (!this._lastZoomWarn || now - this._lastZoomWarn > 5000) {
         const who = this.options.attribution ? '"' + this.options.attribution + '"' : 'WMS layer';
-        toastMsg('Zoom in to load ' + who, 'warn', undefined, 'map-quiet');
+        _loadToast('Zoom in to load ' + who, 'warn', undefined, 'map-quiet');
         this._lastZoomWarn = now;
       }
       return;
@@ -1009,7 +1071,7 @@ const _WMSImageLayer = L.Layer.extend({
       if (reqId !== this._reqId || this._errShown) return;
       this._errShown = true;
       const who = this.options.attribution ? '"' + this.options.attribution + '"' : 'layer';
-      toastMsg('WMS ' + who + ' — ' + detail, 'error');
+      _loadToast('WMS ' + who + ' — ' + detail, 'error');
       // Also record it: the toast is gone in seconds, the diagnostic report is
       // what survives long enough to be looked at afterwards.
       console.warn('[navitron] WMS ' + who + ' failed:', detail, '|', this._wmsUrl);
@@ -1237,12 +1299,19 @@ function _selUpdateBadge() {
 
 function _selExportKML() {
   if (!_selKeys.size) { toastMsg('Nothing selected', 'warn'); return; }
+  // Clone the captured features so styling the export never mutates the stored selection.
   const features = [];
-  _selFeatures.forEach(f => { if (f) features.push(f); });
+  _selFeatures.forEach(f => { if (f) features.push({ type:'Feature', geometry: f.geometry, properties: { ...(f.properties || {}) } }); });
   if (!features.length) { toastMsg('Cannot export selection', 'error'); return; }
+  // Colour the exported parcels with the target WFS layer's colour so Google Earth shows
+  // them styled (with transparency) instead of default white/opaque.
+  const _tgt = _wfsRegistry.find(e => e.typeName === _selTarget) || _wfsRegistry[0];
+  const _col = (_tgt && _tgt.layer && _tgt.layer.options &&
+    (_tgt.layer.options.color || (_tgt.layer.options.style && _tgt.layer.options.style.color))) || '#ff5533';
+  if (typeof _styleFeatureForKml === 'function') features.forEach(f => _styleFeatureForKml(f, _col, 1));
   showPromptModal('File name (no extension):', 'selection', fname => {
     const base = ((fname || 'selection').trim() || 'selection').replace(/\.kml$/i, '');
-    downloadFile(tokml({ type:'FeatureCollection', features }),
+    downloadFile(tokml({ type:'FeatureCollection', features }, { simplestyle: true }),
       base + '.kml', 'application/vnd.google-earth.kml+xml');
   }, 'The .kml file is saved to your device Downloads folder.');
 }
@@ -1355,6 +1424,11 @@ const _WFSLayer = L.Layer.extend({
     this._wfsUrl = _sp.base;
     this._wfsPre = _sp.pre;
     L.setOptions(this, options);
+    // Every WFS needs its OWN pane so the legend can restack it: a pane-less layer
+    // falls into the shared overlayPane (z 400), which _applyOverlayZOrder skips —
+    // pinning it above the legend band regardless of drag order. Cadastre layers
+    // pass an explicit pane (wfs-particelle / wfs-fogli) and keep it.
+    if (!this.options.pane) this.options.pane = 'wfs-u' + L.stamp(this);
     this.options.style = Object.assign({}, this.options.style); // own copy
     if (this.options.color) { this.options.style.color = this.options.color; this.options.style.fillColor = this.options.color; }
     if (this.options.hollow) { this.options.style.fillOpacity = 0; }
@@ -1553,6 +1627,10 @@ const _WFSLayer = L.Layer.extend({
 
   _schedule() { clearTimeout(this._timer); this._timer = setTimeout(() => this._update(), 400); },
 
+  /* Human name for toasts, so a message says WHICH overlay it refers to (there can be
+     several WFS at once: Catasto Particelle, Fogli, user-added). Falls back when unnamed. */
+  _name() { return this.options.attribution ? '"' + this.options.attribution + '"' : 'WFS layer'; },
+
   _update() {
     const map = this._map;
     if (!map) return;
@@ -1560,7 +1638,7 @@ const _WFSLayer = L.Layer.extend({
       if (this._geo) { try { map.removeLayer(this._geo); } catch(_) {} this._geo = null; }
       const now = Date.now();
       if (!this._lastZoomWarn || now - this._lastZoomWarn > 5000) {
-        toastMsg('Zoom in to load WFS features', 'warn', undefined, 'map-quiet');
+        _loadToast('Zoom in to load ' + this._name(), 'warn', undefined, 'map-quiet');
         this._lastZoomWarn = now;
       }
       return;
@@ -1671,9 +1749,16 @@ const _WFSLayer = L.Layer.extend({
       }
       if (!geojson.features || geojson.features.length === 0) {
         const _hasFilter = this.options.filterAttr && this.options.filterVals;
-        toastMsg(_hasFilter
-          ? 'WFS: no features match filter — check attribute name and values'
-          : 'WFS: no features in current view', 'warn', undefined, 'map-quiet');
+        // This fires on every empty viewport refresh — i.e. every pan/zoom over an area
+        // with no matching features — which is spammy. Throttle to once per 8 s per layer
+        // and honour the startup grace window (via _loadToast).
+        const _now = Date.now();
+        if (!this._lastEmptyWarn || _now - this._lastEmptyWarn > 8000) {
+          _loadToast(_hasFilter
+            ? this._name() + ': no features match filter — check attribute name and values'
+            : this._name() + ': no features in current view', 'warn', undefined, 'map-quiet');
+          this._lastEmptyWarn = _now;
+        }
         try { this.fire('wfsupdate', { count: 0 }); } catch(_) {}
         return;
       }
@@ -1745,7 +1830,10 @@ const _WFSLayer = L.Layer.extend({
             // Prevent popup interactions from leaking to the map (nav pick mode, selection toggle, scroll-zoom)
             L.DomEvent.disableClickPropagation(popupEl);
             L.DomEvent.disableScrollPropagation(popupEl);
-            layer.bindPopup(popupEl, { maxWidth:500, className:'wfs-popup' });
+            // autoPan off: a popup near the edge would nudge the map, and that move
+            // triggers the per-viewport WFS refresh which rebuilds features and closes the
+            // popup right after it opened. Without the pan it stays until the user moves.
+            layer.bindPopup(popupEl, { maxWidth:500, className:'wfs-popup', autoPan:false });
           }
         }).addTo(map);
         // Remove old layer; clear stale screen refs for layers that left the viewport
@@ -1887,18 +1975,18 @@ const _WFSLayer = L.Layer.extend({
         const _exc = _d.querySelector('ExceptionText,exceptionText');
         const _hint = (this.options.filterAttr && this.options.filterVals)
           ? ' — filter active: verify attribute name and WFS version' : '';
-        toastMsg('WFS: server returned <' + _root.localName + '>' + (_exc ? ': ' + _exc.textContent.substring(0,60) : '') + _hint, 'error');
-      } catch(_) { toastMsg('WFS: invalid response', 'error'); }
+        _loadToast(this._name() + ': server returned <' + _root.localName + '>' + (_exc ? ': ' + _exc.textContent.substring(0,60) : '') + _hint, 'error');
+      } catch(_) { _loadToast(this._name() + ': invalid response', 'error'); }
     };
 
     if (window.cordova && cordova.plugin && cordova.plugin.http) {
       cordova.plugin.http.sendRequest(url, { method:'get', responseType:'arraybuffer' },
         res => _parse(_decodeXmlBuffer(res.data)),
-        () => { if (reqId === this._reqId) toastMsg('WFS request failed', 'error'); }
+        () => { if (reqId === this._reqId) _loadToast(this._name() + ': request failed', 'error'); }
       );
     } else {
       fetch(url).then(r => r.arrayBuffer()).then(buf => _parse(_decodeXmlBuffer(buf)))
-        .catch(() => { if (reqId === this._reqId) toastMsg('WFS request failed', 'error'); });
+        .catch(() => { if (reqId === this._reqId) _loadToast(this._name() + ': request failed', 'error'); });
     }
   }
 });
@@ -1940,14 +2028,24 @@ function _createLayer(cfg, token, isOverlay) {
          below one pixel and the cadastral 6 m, so OpenLayers is not needed to draw. */
       const _crsCode = cfg.crs || 'EPSG:4326';
       const _isGeo   = /^EPSG:(4326|4258|6706)$/.test(_crsCode) || _crsCode === 'CRS:84';
+      // A non-Web-Mercator overlay is stretched onto the Web Mercator map by one linear
+      // imageOverlay: the mismatch is negligible zoomed in (~0.01 px at z17) but blows up
+      // zoomed out (~4 px / ~1.9 km at z8). Floor the overlay minZoom to 8 unless the
+      // source is Web Mercator (no reprojection, no error). This runs for every overlay —
+      // bundled, user-added via "Add web map", and layers restored from an older install
+      // (their saved crs, or geographic when none was stored) — so the guard is universal.
+      const _isWebMerc = /3857|900913|3785|102100/.test(_crsCode);
+      let _ovMinZoom = (isOverlay && cfg.minZoom != null) ? cfg.minZoom : null;
+      if (isOverlay && !_isWebMerc) _ovMinZoom = Math.max(_ovMinZoom || 0, 8);
       const lyr = new _WMSImageLayer(wmsUrl, {
         layers: cfg.layers, version: cfg.version || (isOverlay ? '1.3.0' : '1.1.1'),
         transparent: true, format: 'image/png',
         attribution: cfg.name, opacity: 0.8,
         crs: _crsCode === 'EPSG:3857' ? L.CRS.EPSG3857 : L.CRS.EPSG4326,
         crsCode: _crsCode, geoAxes: _isGeo,
-        // Gate the request by scale window only for overlays — never blank a basemap.
-        minZoom: (isOverlay && cfg.minZoom != null) ? cfg.minZoom : null,
+        // Gate the request by scale window (overlays only, never a basemap); non-Web-
+        // Mercator overlays are additionally floored to z8 by _ovMinZoom above.
+        minZoom: _ovMinZoom,
         pane:       isOverlay ? 'wms-overlay' : 'wms-basemap-img',
         paneZIndex: isOverlay ? 260 : 250
       });

@@ -242,6 +242,16 @@ document.getElementById('cred-cancel').addEventListener('click', () => {
 
 /* ===== CONFIG SAVE / LOAD ===== */
 const _CFG_KEY = 'navitron_custom_maps';
+// Bundled default overlays (navitron-config.json) are re-imported on every launch, so
+// deleting one would otherwise come back next boot. We remember deleted defaults by
+// content signature and skip re-importing them from the bundle. User-added overlays are
+// unaffected (nothing re-adds them anyway).
+const _REMOVED_KEY = 'navitron_removed_defaults';
+function _sigOf(c) { return (c.type || '') + '|' + (c.url || '') + '|' + (c.layers || ''); }
+function _getRemovedDefaults() { try { return JSON.parse(localStorage.getItem(_REMOVED_KEY) || '[]'); } catch(_) { return []; } }
+function _addRemovedDefault(sig) {
+  try { const l = _getRemovedDefaults(); if (l.indexOf(sig) < 0) { l.push(sig); localStorage.setItem(_REMOVED_KEY, JSON.stringify(l)); } } catch(_) {}
+}
 
 function _getSslExceptions() {
   try { return JSON.parse(localStorage.getItem('navitron_ssl_exceptions') || '[]'); } catch(_) { return []; }
@@ -258,6 +268,9 @@ function _autoSaveConfig() {
 function _importConfig(cfg) {
   if (!cfg || !Array.isArray(cfg.maps)) { toastMsg('Invalid file', 'error', undefined, 'sidebar'); return; }
   let added = 0;
+  // Only the bundled auto-import honours the removed-defaults list; a saved-config restore
+  // or a user file import must not be filtered by it.
+  const _removed = cfg._bundled ? _getRemovedDefaults() : null;
   cfg.maps.forEach(c => {
     if (!c.id || !c.type || !c.url) return;
     if (BASEMAPS[c.id]) return;
@@ -265,7 +278,15 @@ function _importConfig(cfg) {
     if (!isNaN(n)) wsCounter = Math.max(wsCounter, n);
     // Overlay layers: restore directly to map via addLayerToList
     if (c.useAs === 'overlay') {
-      if (customMapConfigs.some(e => e.id === c.id)) return; // skip duplicates
+      // A bundled default the user has deleted stays deleted (don't re-import it).
+      if (_removed && _removed.indexOf(_sigOf(c)) >= 0) return;
+      // Skip duplicates: always by id; and — ONLY for the bundled import — also by content
+      // (type+url+layers), so a bundled default the user had already added by hand (under a
+      // different id) doesn't load twice. Content-dedup must NOT touch a saved restore or a
+      // user file import, where two same-content layers (e.g. the same WFS with different
+      // filter/colour) are legitimate and must both survive.
+      const _sameLayer = e => e.type === c.type && e.url === c.url && e.layers === c.layers;
+      if (customMapConfigs.some(e => e.id === c.id || (cfg._bundled && _sameLayer(e)))) return;
       try {
         const layer = _createLayer(c, null);
         if (typeof addLayerToList === 'function') {
@@ -306,6 +327,7 @@ function _importConfig(cfg) {
             onDelete: () => {
               const idx = customMapConfigs.indexOf(c);
               if (idx !== -1) customMapConfigs.splice(idx, 1);
+              _addRemovedDefault(_sigOf(c));   // so a bundled default stays gone next launch
               _autoSaveConfig();
             }
           });
@@ -394,7 +416,7 @@ document.addEventListener('deviceready', () => {
 // Load bundled default maps from navitron-config.json (if present in app folder)
 fetch('navitron-config.json')
   .then(r => r.ok ? r.json() : null)
-  .then(data => { if (data && data.maps && data.maps.length) _importConfig(data); })
+  .then(data => { if (data && data.maps && data.maps.length) { data._bundled = true; _importConfig(data); } })
   .catch(() => {});
 
 // Ripristina la basemap salvata (dopo che le mappe custom sono state caricate)

@@ -100,9 +100,10 @@
       "version": "1.3.0",
       "crs": "EPSG:4258",
       "protected": false,
+      "minZoom": 18,
       "useAs": "overlay",
       "opacity": 86,
-      "visible": false
+      "visible": true
     },
     {
       "id": "custom_ws_14",
@@ -119,7 +120,7 @@
       "color": "#0055ff",
       "hollow": true,
       "pane": "wfs-fogli",
-      "visible": false
+      "visible": true
     },
     {
       "id": "custom_ws_13",
@@ -136,7 +137,35 @@
       "color": "#22aa44",
       "fillOpacity": 0.5,
       "pane": "wfs-particelle",
-      "visible": false
+      "visible": true
+    },
+    {
+      "id": "custom_ws_15",
+      "type": "wms",
+      "url": "https://wms.cartografia.agenziaentrate.gov.it/inspire/wms/ows01.php",
+      "name": "Catasto Fabbricati",
+      "layers": "fabbricati",
+      "version": "1.3.0",
+      "crs": "EPSG:4258",
+      "protected": false,
+      "minZoom": 17,
+      "useAs": "overlay",
+      "opacity": 80,
+      "visible": true
+    },
+    {
+      "id": "custom_ws_16",
+      "type": "wms",
+      "url": "https://wms.cartografia.agenziaentrate.gov.it/inspire/wms/ows01.php",
+      "name": "Province",
+      "layers": "province",
+      "version": "1.3.0",
+      "crs": "EPSG:4258",
+      "protected": false,
+      "minZoom": 8,
+      "useAs": "overlay",
+      "opacity": 80,
+      "visible": true
     }
   ],
   "sslExceptions": [

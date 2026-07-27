@@ -244,8 +244,11 @@ _refreshDrawButtons();
 /* Inject simplestyle-spec props from layer style so tokml({simplestyle:true})
    emits <LineStyle>/<PolyStyle>. Skips markers (no line/poly style applies). */
 function _applySimpleStyle(props, layer) {
-  if (!layer || layer instanceof L.Marker) return;
+  if (!layer) return;
   const color = layer._geoColor || '#4f8ef7';
+  // Markers: emit marker-color so Google Earth colours the pin (opacity is not
+  // expressible in the simplestyle spec for points — only the colour transfers).
+  if (layer instanceof L.Marker) { props['marker-color'] = color; return; }
   const op    = layer._geoOpacity !== undefined ? layer._geoOpacity : 1;
   props.stroke           = color;
   props['stroke-opacity'] = op;
@@ -255,6 +258,21 @@ function _applySimpleStyle(props, layer) {
     props.fill           = color;
     props['fill-opacity'] = op * 0.3;
   }
+}
+
+/* Same as above but for a raw GeoJSON feature with no Leaflet layer behind it (WFS
+   selection, dissolve result): takes colour + opacity directly and injects simplestyle
+   props, so those exports carry symbology into Google Earth instead of rendering as the
+   default white/opaque. tokml({simplestyle:true}) then emits Poly/Line/IconStyle. */
+function _styleFeatureForKml(f, color, opacity) {
+  if (!f) return;
+  f.properties = f.properties || {};
+  const gt = (f.geometry && f.geometry.type) || '';
+  if (/Point/.test(gt)) { f.properties['marker-color'] = color; return; }
+  f.properties.stroke = color;
+  f.properties['stroke-opacity'] = opacity;
+  f.properties['stroke-width'] = 2;
+  if (/Polygon/.test(gt)) { f.properties.fill = color; f.properties['fill-opacity'] = opacity * 0.3; }
 }
 
 function layerToGeoJSON(layer) {

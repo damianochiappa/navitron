@@ -22,6 +22,12 @@
   --sidebar-w:   292px;
   --status-h:    40px;
   --transition:  .22s cubic-bezier(.4,0,.2,1);
+  /* Bottom floating-UI lanes. Everything anchored to --lane-bottom clears the status
+     bar, a reserved copyright band and the Android gesture inset in one shot, so the
+     left/centre/right floaters share one baseline instead of picking corners by hand.
+     Tune --copyright-band on device if the attribution bar is taller/shorter. */
+  --copyright-band: 20px;
+  --lane-bottom: calc(var(--status-h) + var(--copyright-band) + env(safe-area-inset-bottom, 0px) + 10px);
 }
 
 /* ===== RESET ===== */
@@ -475,7 +481,8 @@ html, body {
 /* ===== TOAST ===== */
 #toast {
   position: fixed;
-  bottom: calc(var(--status-h) + 12px);
+  bottom: var(--lane-bottom);
+  transition: bottom .25s cubic-bezier(.4,0,.2,1);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -553,6 +560,12 @@ html, body {
 }
 #sidebar.collapsed #toast-sidebar { display: none; }
 #toast-sidebar .toast-item { white-space: normal; text-align: center; max-width: 100%; }
+/* Dynamic toast lane: lift it clear of whichever centre badge is showing so the
+   transient message never lands on top of a persistent control. Falls back to the
+   base lane on engines without :has() — no worse than a shared slot. */
+body:has(#sel-badge:not(.hidden)) #toast,
+body:has(#nav-follow-badge:not(.hidden)) #toast { bottom: calc(var(--lane-bottom) + 48px); }
+body:has(#kml-edit-bar:not(.hidden)) #toast     { bottom: calc(var(--lane-bottom) + 96px); }
 
 /* Boost popup/tooltip pane z-index — leaflet-rotate per-pane transforms create stacking
    contexts that ignore z-index between siblings; DOM order + high z-index as double safety */
@@ -663,6 +676,23 @@ html, body {
   #app.menu-open .leaflet-control-container .leaflet-bottom.leaflet-left,
   #app.menu-open .leaflet-control-attribution,
   #app.menu-open .leaflet-control-scale { display: none !important; }
+}
+
+/* Bigger, more tappable sidebar content on PHONES — matched in BOTH orientations
+   (portrait = narrow width, landscape phone = short height), so it's consistent whichever
+   way the phone is held. Tablets/desktop (wide AND tall) are excluded and unchanged.
+   Labels wrap or ellipsis-truncate so they can't overflow horizontally; the panel scrolls
+   vertically. The tab bar is deliberately left as-is (it already scrolls horizontally). */
+@media (max-width: 640px), (max-height: 500px) {
+  .panel { font-size: 14px; }
+  .basemap-item { padding: 10px 12px; gap: 11px; }
+  .basemap-item span { font-size: 15px; }
+  .layer-item { padding: 10px; font-size: 14px; }
+  /* Keep the guide/help coherent with the enlarged content — a modest bump so it doesn't
+     stay visibly smaller than the rest of the sidebar. */
+  .guide-item { font-size: 12px; }
+  .guide-key { font-size: 11px; }
+  .guide-section h4 { font-size: 11px; }
 }
 
 /* Wide screen: wider sidebar */
@@ -818,6 +848,14 @@ a.polyline-measure-controlOnBgColor:hover {
 }
 .leaflet-popup-tip { background: var(--surface2) !important; }
 .leaflet-popup-close-button { color: var(--text-muted) !important; }
+/* Leaflet sets user-select:none AND a restrictive touch-action on the map container;
+   re-enable both inside popups so the text (coordinates, cadastral attributes) can be
+   long-pressed and copied natively, instead of the touch being taken as a map drag —
+   which made selection work only on some rows, unpredictably. */
+.leaflet-popup-content, .leaflet-popup-content * {
+  -webkit-user-select: text; user-select: text; -webkit-touch-callout: default;
+  touch-action: auto;
+}
 .leaflet-control-layers {
   background: var(--surface) !important;
   color: var(--text) !important;
@@ -942,7 +980,7 @@ a.polyline-measure-controlOnBgColor:hover {
 /* ===== MAP TOOLS FLOATING PANEL ===== */
 #map-tools {
   position: absolute;
-  bottom: 10px;
+  bottom: var(--lane-bottom);
   right: 46px;
   z-index: 800;
   width: 276px;
@@ -994,7 +1032,7 @@ a.polyline-measure-controlOnBgColor:hover {
   /* Lifted clear of the Android gesture/navigation bar: the panel is bottom-anchored, so
      its last controls (Export KML / Save as drawing) sat right on the system bar and were
      hard to tap. Drag still overrides this — the value is only the starting position. */
-  bottom: 56px; right: 46px;
+  bottom: var(--lane-bottom); right: 46px;
   z-index: 800;
   width: 264px;
   background: rgba(16,22,36,0.92);
@@ -1011,7 +1049,7 @@ a.polyline-measure-controlOnBgColor:hover {
 
 #sel-badge {
   position: absolute;
-  bottom: 64px;
+  bottom: var(--lane-bottom);
   left: 50%; transform: translateX(-50%);
   transition: left .3s cubic-bezier(.4,0,.2,1);
   z-index: 810;
@@ -1096,7 +1134,7 @@ a.polyline-measure-controlOnBgColor:hover {
 .wtp-cancel:hover { color: var(--danger); }
 
 #kml-edit-bar {
-  position: absolute; bottom: 108px;
+  position: absolute; bottom: calc(var(--lane-bottom) + 48px);
   left: 50%; transform: translateX(-50%);
   transition: left .3s cubic-bezier(.4,0,.2,1);
   z-index: 810;
@@ -1153,7 +1191,7 @@ a.polyline-measure-controlOnBgColor:hover {
 
 #flight-panel {
   position: absolute;
-  bottom: 10px; left: 10px;
+  bottom: var(--lane-bottom); left: 10px;
   z-index: 800;
   width: 232px;
   background: rgba(16,22,36,0.92);
@@ -1171,7 +1209,7 @@ a.polyline-measure-controlOnBgColor:hover {
 .flight-drag-header { touch-action: none; }
 #nav-hud {
   position: absolute;
-  bottom: 10px; left: 10px;
+  bottom: var(--lane-bottom); left: 10px;
   z-index: 800;
   width: 232px;
   background: rgba(16,22,36,0.92);
@@ -1187,7 +1225,7 @@ a.polyline-measure-controlOnBgColor:hover {
 #nav-hud.hidden { display: none; }
 #nav-follow-badge {
   position: absolute;
-  bottom: 64px;
+  bottom: var(--lane-bottom);
   left: 50%; transform: translateX(-50%);
   z-index: 810;
   background: rgba(16,22,36,0.95);
@@ -1278,6 +1316,19 @@ a.polyline-measure-controlOnBgColor:hover {
   background: linear-gradient(135deg, #0066ff 0%, #00ccff 100%) !important;
   color: #fff !important;
   box-shadow: 0 0 0 2px rgba(0,170,255,.5), 0 0 12px rgba(0,170,255,.35) !important;
+}
+/* Compass rotation state: muted = locked to north (default); lit accent = free
+   rotation on; amber = navigation is driving the bearing (track-up). */
+.leaflet-control-compass a { opacity: .6; transition: opacity .15s ease, box-shadow .15s ease; }
+.leaflet-control-compass.rot-on a {
+  opacity: 1;
+  background: linear-gradient(135deg, #5b9cf6 0%, #6c5ce7 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 0 0 2px rgba(91,156,246,.5), 0 0 12px rgba(91,156,246,.35) !important;
+}
+.leaflet-control-compass.rot-nav a {
+  background: linear-gradient(135deg, #ffcc00 0%, #ff9500 100%) !important;
+  box-shadow: 0 0 0 2px rgba(255,204,0,.55), 0 0 12px rgba(255,204,0,.4) !important;
 }
 
 /* ===== CREDENTIAL MODAL ===== */

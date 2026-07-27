@@ -724,6 +724,12 @@
       }
       const marked = selectAllRendered(parcelLayer);
       revealResult('Selected ' + marked + ' parcel' + (marked === 1 ? '' : 's'));
+      // Target is now selected → drop the filter so the final (debounced) fetch loads the
+      // surrounding parcels too. The selection stays highlighted via _selKeys (identity-based,
+      // not filter-based), so it survives the unfiltered re-render. NB: selectAllRendered must
+      // NOT run again on that render, or it would select every visible parcel — it doesn't,
+      // the re-highlight is automatic in map.js onEachFeature.
+      parcelLayer.setFilter('', '');
       const selB = computeSelBounds();
       if (selB && selB.isValid && selB.isValid()) {
         try {

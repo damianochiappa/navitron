@@ -1311,7 +1311,8 @@ function _proceedDissolve() {
             const desc = (document.getElementById('dissolve-desc-input').value || '').trim();
             modal.classList.add('hidden');
             result.properties = { name, description: desc };
-            const kmlContent = tokml({ type: 'FeatureCollection', features: [result] });
+            if (typeof _styleFeatureForKml === 'function') _styleFeatureForKml(result, '#4f8ef7', 1);
+            const kmlContent = tokml({ type: 'FeatureCollection', features: [result] }, { simplestyle: true });
             _loadAndPersist(kmlContent, name + '.kml', 'application/vnd.google-earth.kml+xml');
             downloadFile(kmlContent, name + '.kml', 'application/vnd.google-earth.kml+xml');
             toastMsg('Layer loaded: ' + name, 'success', undefined, 'sidebar');
