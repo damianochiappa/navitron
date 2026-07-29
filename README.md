@@ -31,6 +31,7 @@ To update, just install the latest release over the existing one: the app update
 
 - **WFS** — live vector features with filtering, style customization, selection export to KML; supports WFS 2.0 + legacy 1.x with GML 3.1.1, ISO-8859-1 encoding, MapServer `?map=...` endpoints; tested on Agenzia delle Entrate (INSPIRE), PCN (minambiente), IGM
 - **Catasto (Italy)** — preloaded and on by default: Land Registry Parcels and Sheets (WFS), parcel labels, Buildings (Catasto Fabbricati) and provincial boundaries (WMS), all from Agenzia delle Entrate INSPIRE. Add more layers of your own from the usual portals (PCN minambiente, IGM, Geoportale Nazionale, ArcGIS/ESRI) via "Add web map" — they're saved and restored on next launch
+- **Fiducial points (Italy)** — PFs are not preloaded. Where the regional authority publishes them via WFS (e.g. Piemonte) they can be added as a queryable layer; elsewhere, import a KML derived from the TAF, the fiducial point table published by Agenzia delle Entrate. Once loaded they're saved and restored on next launch
 - **Cadaster wizard (Italy)** — cascading dropdowns from region to sheet (foglio); optional parcel filter applied to the CadastralParcel layer, with automatic zoom and selection highlight
 - **Offline tile cache** — download any basemap within a KML boundary for offline use (Service Worker)
 - **KML/KMZ/GeoJSON/GPX import** — layer management, vertex editing, attribute popup, dissolve polygons (turf.js), rename, export

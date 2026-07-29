@@ -1662,7 +1662,12 @@ const _WFSLayer = L.Layer.extend({
       TYPENAME:  this.options.typeName,
       BBOX: bbox,
       SRSNAME: srsName,
-      maxFeatures: 2000, count: 2000
+      // 1000 is the ceiling MapServer enforces by default (CountDefault). WFS 1.x clamps
+      // silently, but WFS 2.0 rejects an out-of-range COUNT with HTTP 400 — which surfaces
+      // as a bare "request failed" toast, since a non-2xx lands in the transport error
+      // callback and never reaches the parser. Asking for more than a viewport can usefully
+      // draw buys nothing, so cap the request at the value every server accepts.
+      maxFeatures: 1000, count: 1000
     };
     // Request JSON only when the server advertised it (default true for back-compat with hand-typed URLs).
     // For GML-only servers (e.g. MapServer PCN) omit the param so the server returns its default GML, parsed below.
@@ -2406,8 +2411,12 @@ function _addBasemapUI(cfg) {
           ...xml.getElementsByTagName('SRS')
         ].map(el => _normCrs(el.textContent.trim())).filter(c => c.startsWith('EPSG:'));
         const crsCodes = [...new Set(rawCodes)];
-        // For INSPIRE/Italian servers: EPSG:4258 (ETRS89) is native; prefer geographic over projected
-        const preferred = ['EPSG:4258', 'EPSG:4326', 'EPSG:6706', 'EPSG:3857'];
+        // For INSPIRE/Italian servers: EPSG:4258 (ETRS89) is native. Geographic only — unlike the
+        // WMS branch, EPSG:3857 is not offered here: _WMSImageLayer is handed an L.CRS object and
+        // projects the BBOX through it, while _update concatenates map.getBounds() degrees with
+        // whatever srsName is set, so a projected CRS ships degrees labelled as metres and the
+        // server answers HTTP 200 with zero features — a silent miss, not an error.
+        const preferred = ['EPSG:4258', 'EPSG:4326', 'EPSG:6706'];
         const crsSelect = document.getElementById('ws-crs');
         if (crsCodes.length) {
           // Same constraint as the WMS branch: the GML reader takes coordinates as

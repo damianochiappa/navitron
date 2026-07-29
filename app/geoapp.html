@@ -266,7 +266,7 @@
               <label class="basemap-item"><input type="radio" name="basemap" value="esri_topo"> <span>ESRI Topo</span></label>
               <label class="basemap-item"><input type="radio" name="basemap" value="natgeo"> <span>NatGeo</span></label>
             </div>
-            <button class="btn btn-secondary btn-full" id="ws-toggle-btn" style="font-size:11px;padding:6px 10px;margin-top:2px">
+            <button class="btn btn-secondary btn-full" id="ws-toggle-btn" style="padding:6px 10px;margin-top:2px">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add web map
             </button>
@@ -288,7 +288,7 @@
                 <label id="ws-layers-label">Layer / type name</label>
                 <div style="display:flex;gap:4px">
                   <input type="text" id="ws-layers" placeholder="e.g. CP.CadastralParcel" style="flex:1;min-width:0">
-                  <button class="btn btn-secondary" id="btn-ws-caps" title="Fetch available layers" style="padding:5px 9px;flex-shrink:0;font-size:11px">Get layers</button>
+                  <button class="btn btn-secondary" id="btn-ws-caps" title="Fetch available layers" style="padding:5px 9px;flex-shrink:0">Get layers</button>
                 </div>
                 <select id="ws-layers-select" style="display:none;margin-top:4px"></select>
               </div>
@@ -348,11 +348,11 @@
             Map configuration
           </div>
           <div class="card-body" style="gap:6px">
-            <button class="btn btn-secondary btn-full" id="btn-cfg-save" style="font-size:11px;padding:6px 10px">
+            <button class="btn btn-secondary btn-full" id="btn-cfg-save" style="padding:6px 10px">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
               Export configuration
             </button>
-            <label class="btn btn-secondary btn-full" style="font-size:11px;padding:6px 10px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
+            <label class="btn btn-secondary btn-full" style="padding:6px 10px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
               Import configuration
               <input type="file" id="cfg-file-input" accept=".json" style="display:none">
@@ -515,7 +515,7 @@
           </div>
         </div>
 
-        <button class="btn btn-secondary btn-full" id="btn-add-bookmark" style="font-size:11px;padding:7px 10px">
+        <button class="btn btn-secondary btn-full" id="btn-add-bookmark" style="padding:7px 10px">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Bookmark current view
         </button>
@@ -533,13 +533,13 @@
             <p class="hint">Tiles viewed on the map are cached automatically. When the cache reaches its 4 GB limit the app asks before freeing space, so nothing is deleted without your consent. To create an offline basemap: select a KML area, a max zoom level and a map, then tap the button — missing tiles are downloaded and the basemap is registered for offline use.</p>
             <div class="field">
               <label>Area extent (KML file)</label>
-              <label class="btn btn-secondary btn-full" style="cursor:pointer;font-size:11px;padding:8px 12px">
+              <label class="btn btn-secondary btn-full" style="cursor:pointer;padding:8px 12px">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                 Select KML extent
                 <!-- accept="*/*": see #file-input; extension is validated in the change handler. -->
                 <input type="file" id="offline-kml-input" accept="*/*" style="display:none">
               </label>
-              <span class="hint" id="offline-kml-name" style="font-size:10px;margin-top:2px"></span>
+              <span class="hint" id="offline-kml-name" style="margin-top:2px"></span>
             </div>
             <div class="field">
               <label>Max zoom level (1–18)</label>
@@ -721,6 +721,7 @@
               <div class="guide-item"><span class="guide-key">Cadaster tab</span><span class="guide-desc">Locate cadastral parcels by administrative cascade. Pick a region &rarr; province &rarr; comune. The list of available sheets (fogli) for that comune is fetched from Agenzia delle Entrate INSPIRE WFS. Pick a sheet, optionally type a parcel number (comma-separated for multiple; wildcards are not supported here &mdash; use the layer filter on Catasto Particelle for pattern matching), then tap "Go to": the map zooms to the parcel — selected and highlighted — and the surrounding parcels are shown for context (the filter used to find it is cleared automatically once selected). Requires online connection; admin boundaries come from PCN minambiente WFS.</span></div>
               <div class="guide-item"><span class="guide-key">Reset</span><span class="guide-desc">Resets the wizard result: deselects the parcels it highlighted and clears any active cadaster filter, returning the Catasto Particelle layer to its default (no filter, viewport-only fetch). After "Go to" the surrounding parcels are shown automatically, so this is what you use to drop the selection when done.</span></div>
               <div class="guide-item"><span class="guide-key">Existing filter</span><span class="guide-desc">If a manual WFS filter is already active on Catasto Particelle (set via the &#9661; button in the layer list), running the wizard replaces it &mdash; a toast warns you when this happens.</span></div>
+              <div class="guide-item"><span class="guide-key">Fiducial pts</span><span class="guide-desc">PFs (punti fiduciali) are not preloaded. Where the regional authority publishes them via WFS &mdash; Piemonte does &mdash; add the service under "Add web map" and the points become a queryable layer like any other. Elsewhere, import a KML derived from the TAF, the fiducial point table published by Agenzia delle Entrate. Either way the layer is saved and restored on next launch. These points carry no legal value: a cadastral filing needs the official AdE monographs.</span></div>
             </div>
 
           </div>
@@ -1020,7 +1021,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">2.2.0</span></div>
+      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">2.2.2</span></div>
       <div class="about-row"><span class="lbl">Author</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">License</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — Open Source</a></span></div>
       <div class="about-row"><span class="lbl">Engine</span><span class="val">Leaflet · Cordova · Android</span></div>

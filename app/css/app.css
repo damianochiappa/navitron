@@ -678,23 +678,6 @@ body:has(#kml-edit-bar:not(.hidden)) #toast     { bottom: calc(var(--lane-bottom
   #app.menu-open .leaflet-control-scale { display: none !important; }
 }
 
-/* Bigger, more tappable sidebar content on PHONES — matched in BOTH orientations
-   (portrait = narrow width, landscape phone = short height), so it's consistent whichever
-   way the phone is held. Tablets/desktop (wide AND tall) are excluded and unchanged.
-   Labels wrap or ellipsis-truncate so they can't overflow horizontally; the panel scrolls
-   vertically. The tab bar is deliberately left as-is (it already scrolls horizontally). */
-@media (max-width: 640px), (max-height: 500px) {
-  .panel { font-size: 14px; }
-  .basemap-item { padding: 10px 12px; gap: 11px; }
-  .basemap-item span { font-size: 15px; }
-  .layer-item { padding: 10px; font-size: 14px; }
-  /* Keep the guide/help coherent with the enlarged content — a modest bump so it doesn't
-     stay visibly smaller than the rest of the sidebar. */
-  .guide-item { font-size: 12px; }
-  .guide-key { font-size: 11px; }
-  .guide-section h4 { font-size: 11px; }
-}
-
 /* Wide screen: wider sidebar */
 @media (min-width: 900px) {
   :root { --sidebar-w: 320px; }
@@ -1572,6 +1555,54 @@ a.polyline-measure-controlOnBgColor:hover {
   transition: transform 70ms, opacity 70ms;
 }
 
+/* ===== SIDEBAR TYPE SCALE ON PHONES =====
+   Bigger, more tappable sidebar content, matched in BOTH orientations (portrait = narrow
+   width, landscape phone = short height) so it reads the same whichever way the phone is
+   held. Tablets/desktop (wide AND tall) are excluded and unchanged.
+
+   POSITION MATTERS, twice over, and the block must stay exactly here:
+   - it sits AFTER every base rule it raises (the guide rules at the top of this section
+     are the late ones); a media query adds no specificity, so an equal-specificity base
+     rule declared further down would silently win and the bump would be dead code;
+   - it sits BEFORE the landscape block below, which deliberately compacts the fields for
+     a short screen. That block stays the last word on what it touches, and its values are
+     raised there in step with these rather than being overridden from here.
+
+   Every panel is covered: text in the sidebar is almost all in classed elements carrying
+   their own font-size, so inheritance from .panel reaches nothing — each one is listed.
+   Labels wrap or ellipsis-truncate so they can't overflow horizontally; .panel scrolls
+   vertically. The tab bar is deliberately left as-is (it already scrolls horizontally). */
+@media (max-width: 640px), (max-height: 500px) {
+  /* Shared card/form chrome — every panel */
+  .card-header { font-size: 12px; }
+  .field label { font-size: 12px; }
+  .field input, .field select, .field textarea { font-size: 15px; }
+  .hint { font-size: 13px; }
+
+  /* Layers */
+  .basemap-item { padding: 10px 12px; gap: 11px; }
+  .basemap-item span { font-size: 15px; }
+  .layer-item { padding: 10px; font-size: 14px; }
+  .layer-opacity-row span { font-size: 11px; }
+
+  /* Draw */
+  .draw-color-row { font-size: 13px; }
+  .draw-desc-input { font-size: 13px; }
+  .upload-area small { font-size: 12px; }
+  .result-box { font-size: 13px; }
+  .result-box .r-label { font-size: 11px; }
+
+  /* Bookmarks */
+  .bookmark-name { font-size: 14px; }
+  .bookmark-coords { font-size: 12px; }
+  .bookmark-empty { font-size: 14px; }
+
+  /* Guide */
+  .guide-section h4 { font-size: 11px; }
+  .guide-item { font-size: 12px; }
+  .guide-key { font-size: 11px; }
+}
+
 /* Landscape corto: evita sovrapposizione tra colonna controlli top-right e bottom-right,
    e riduce chrome+bottoni per non affollare l'altezza ridotta del phone ruotato. */
 @media (orientation: landscape) and (max-height: 500px) {
@@ -1605,8 +1636,12 @@ a.polyline-measure-controlOnBgColor:hover {
   .btn { padding: 6px 12px; font-size: 12px; min-height: 28px; }
   .tab-btn { padding: 7px 3px; font-size: 8px; }
   .mt-tab { padding: 6px 5px; font-size: 10px; }
-  .field label { font-size: 10px; }
-  .field input, .field select, .field textarea { padding: 6px 8px; font-size: 12px; }
+  /* Fields stay one step below the phone type scale above: the height here is 500px at
+     most, and a form is the tallest thing in the sidebar. Raised in step with that scale
+     (10→11, 12→13) so rotating the phone shrinks the text a little, never back to the
+     pre-scale size. Padding stays compact — that is what actually buys vertical room. */
+  .field label { font-size: 11px; }
+  .field input, .field select, .field textarea { padding: 6px 8px; font-size: 13px; }
 
   /* Leaflet on-map controls (zoom bar, GPS, compass, nav): 40×40 → 30×30, font 18 → 13.
      Overrides the base rules at .leaflet-bar a and .leaflet-control-gps/tools/nav/compass a. */

@@ -1,5 +1,5 @@
 ---
-title: "Navitron — App GIS per il catasto italiano: WFS particelle, offline, KML"
+title: "Navitron GIS — App per il catasto italiano: WFS particelle, offline, KML"
 description: "App Android open source per il catasto italiano: interrogazione WFS delle particelle catastali dell'Agenzia delle Entrate (INSPIRE), ricerca per comune / foglio / particella, cache tile offline, import ed export KML/GPX/GeoJSON. Cordova, build on-device con Termux."
 image: /catasto-particelle-wfs.png
 ---
@@ -24,7 +24,9 @@ App Android **open source per il catasto italiano**, pensata per il lavoro sul c
 
 ## A cosa serve Navitron
 
-Navitron ti aiuta a individuare un terreno partendo dai dati catastali — comune, foglio e particella — e a riconoscerlo sulla mappa satellitare. Con il GPS raggiungi la particella sul posto e ti orienti tra confini, fabbricati, strade e corsi d'acqua, anche senza connessione grazie alle mappe salvate per l'uso offline.
+Navitron GIS non sostituisce i software catastali professionali: è un'app da campo, pensata per orientarsi sul terreno.
+
+Ti aiuta a individuare un terreno partendo dai dati catastali — comune, foglio e particella — e a riconoscerlo sulla mappa satellitare. Con il GPS raggiungi la particella sul posto e ti orienti tra confini, fabbricati, strade e corsi d'acqua, anche senza connessione grazie alle mappe salvate per l'uso offline.
 
 I dati catastali dell'Agenzia delle Entrate sono già preconfigurati e attivi all'avvio: particelle e fogli del Catasto Terreni (WFS vettoriale), le etichette delle particelle, il Catasto Fabbricati e i confini provinciali (overlay WMS). I livelli catastali di dettaglio compaiono man mano che zoomi — l'Agenzia li pubblica solo oltre una certa scala — mentre le province si vedono già a scala ampia. Catasto e altri tematismi si sovrappongono alla mappa di sfondo che preferisci — satellitare, topografica o stradale — e di ogni livello puoi regolarne l'opacità (e il colore, per i livelli vettoriali come le particelle catastali) per confrontarlo con il terreno sottostante. Puoi aggiungere altri livelli cartografici indicandone l'indirizzo una sola volta: restano salvati e si ricaricano agli avvii successivi. Sono supportati servizi pubblici come la cartografia INSPIRE di IGM e Geoportale Nazionale e — con le relative credenziali — i servizi ArcGIS/ESRI della tua organizzazione, nei formati WMS, WFS, WMTS/XYZ e ArcGIS MapServer.
 
@@ -62,6 +64,7 @@ Per aggiornare, installa la release più recente sopra quella esistente: l'app s
 
 - **WFS** — interrogazione live di feature vettoriali con filtri, stile personalizzabile, export della selezione in KML; supporta WFS 2.0 e legacy 1.x con GML 3.1.1, encoding ISO-8859-1, endpoint MapServer `?map=...`; testato su Agenzia delle Entrate (INSPIRE), PCN (minambiente), IGM
 - **Catasto (Italia)** — precaricati e attivi all'avvio: particelle e fogli del Catasto Terreni (WFS), etichette particelle, Catasto Fabbricati e confini provinciali (WMS), tutti dell'Agenzia delle Entrate INSPIRE. Puoi aggiungerne altri a piacere dai vari portali (PCN minambiente, IGM, Geoportale Nazionale, ArcGIS/ESRI) via "Add web map": restano salvati e si ricaricano ai riavvii
+- **Punti fiduciali (Italia)** — i PF non sono precaricati. Dove l'ente regionale li pubblica via WFS (es. Piemonte) puoi aggiungerli come layer interrogabile; altrimenti puoi caricarli da un KML ricavato dalla TAF, la tabella dei punti fiduciali distribuita dall'Agenzia delle Entrate. Una volta caricati restano salvati e si ricaricano ai riavvii
 - **Wizard catasto (Italia)** — menu a tendina a cascata da regione a foglio; filtro opzionale sulla particella applicato al layer CadastralParcel, con zoom automatico ed evidenziazione della selezione
 - **Cache tile offline** — scarica una qualsiasi basemap entro un confine KML per l'uso offline (Service Worker)
 - **Import KML/KMZ/GeoJSON/GPX** — gestione layer, editing dei vertici, popup degli attributi, dissolve dei poligoni (turf.js), rinomina, export
