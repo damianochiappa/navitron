@@ -49,8 +49,57 @@ map.on('layeradd', e => {
   if (e.layer && e.layer instanceof L.TileLayer) {
     e.layer.on('tileloadstart', window._nvTileStart || (()=>{}));
     e.layer.on('tileload tileerror', window._nvTileEnd || (()=>{}));
+    _watchTileErrors(e.layer);
   }
 });
+
+/* A tile source that is down stays silent: Leaflet fetches tiles through <img>, so a dead
+   host, an HTTP 500 and an OGC ServiceException body all arrive as the same bare onerror,
+   with nothing to read. What the user sees is an empty map, which reads as the app's fault.
+   Count failures per layer and name the source once per outage; the counter is reset by the
+   first tile that loads again, so a server that comes back goes quiet on its own.
+   The threshold and the cooldown are what keep this from becoming noise: single tiles fail
+   at the edge of a scale window routinely, and panning in and out of a downloaded area would
+   otherwise re-arm the notice on every drag.
+   The single-image WMS layer has its own notice (_notifyErr): there the response body is
+   readable, so it can quote the server's own message. Here there is none. */
+const _TILE_ERR_MIN = 4;        // consecutive failures before speaking
+const _TILE_ERR_GAP = 30000;    // ms between two notices about the same layer
+
+function _tileLayerLabel(layer) {
+  // Prefer the name shown in the basemap list — the string the user picked the map by.
+  try {
+    const id = Object.keys(BASEMAPS).find(k => BASEMAPS[k] === layer);
+    if (id) {
+      const inp = document.querySelector('input[name="basemap"][value="' + id + '"]');
+      const sp  = inp && inp.parentElement && inp.parentElement.querySelector('span');
+      if (sp && sp.textContent.trim()) return sp.textContent.trim();
+    }
+  } catch(_) {}
+  // Otherwise the attribution, stripped of the markup the bundled basemaps carry in it.
+  const a = ((layer.options && layer.options.attribution) || '').replace(/<[^>]*>/g, '').trim();
+  if (!a) return 'the map';
+  return a.length > 40 ? a.slice(0, 40) + '…' : a;
+}
+
+function _watchTileErrors(layer) {
+  if (layer._tileErrWired) return;
+  layer._tileErrWired = true;
+  layer._tileErrN = 0;
+  layer.on('tileerror', () => {
+    if (++layer._tileErrN < _TILE_ERR_MIN) return;
+    const now = Date.now();
+    if (layer._tileErrAt && now - layer._tileErrAt < _TILE_ERR_GAP) return;
+    layer._tileErrAt = now;
+    const who = _tileLayerLabel(layer);
+    _loadToast(navigator.onLine === false
+      ? 'No connection: "' + who + '" cannot load'
+      : '"' + who + '" is not responding — server unavailable', 'error');
+    // The toast is gone in seconds; the diagnostic report is what survives to be read later.
+    console.warn('[navitron] tile source failing:', who, '|', layer._url || '(no url)');
+  });
+  layer.on('tileload', () => { layer._tileErrN = 0; });
+}
 
 let currentBasemap = BASEMAPS.osm;
 currentBasemap.addTo(map);
@@ -1008,6 +1057,9 @@ const _WMSImageLayer = L.Layer.extend({
       TRANSPARENT:this.options.transparent ? 'TRUE' : 'FALSE',
       WIDTH:size.x, HEIGHT:size.y, BBOX:bbox
     };
+    // Several servers default an opaque image to a black background when BGCOLOR is
+    // missing, which is the other way a line-work map arrives as a negative.
+    if (!this.options.transparent) p.BGCOLOR = this.options.bgcolor || '0xFFFFFF';
     p[isV13 ? 'CRS' : 'SRS'] = crsCode;
     return this._wmsUrl + '?' +
       (this._wmsPre ? this._wmsPre + '&' : '') +
@@ -2044,7 +2096,12 @@ function _createLayer(cfg, token, isOverlay) {
       if (isOverlay && !_isWebMerc) _ovMinZoom = Math.max(_ovMinZoom || 0, 8);
       const lyr = new _WMSImageLayer(wmsUrl, {
         layers: cfg.layers, version: cfg.version || (isOverlay ? '1.3.0' : '1.1.1'),
-        transparent: true, format: 'image/png',
+        /* Transparency is decided by the ROLE, not by the source. An overlay must let what
+           is underneath show through; a basemap must not — asked with TRANSPARENT=TRUE a
+           line-work map (a regional CTR, a cadastral sheet) comes back as strokes over an
+           empty alpha channel, and on the dark app background that reads as a negative.
+           Opaque, the server draws it on BGCOLOR instead (see _buildUrl). */
+        transparent: isOverlay, bgcolor: cfg.bgcolor || '0xFFFFFF', format: 'image/png',
         attribution: cfg.name, opacity: 0.8,
         crs: _crsCode === 'EPSG:3857' ? L.CRS.EPSG3857 : L.CRS.EPSG4326,
         crsCode: _crsCode, geoAxes: _isGeo,
@@ -2081,6 +2138,19 @@ async function _fetchServiceInfo(url) {
 }
 
 function _applyBasemap(id, layer) {
+  /* A WMS serving as the basemap is now requested opaque on white, so the surface under it
+     has to match: while the image is being fetched, and below the layer's scale window,
+     nothing is drawn and the container shows through — dark blue behind a paper map reads
+     as a fault. The role decides, not where the entry came from: a CTR added by hand gets
+     the same treatment as a bundled one. Every factory basemap here is XYZ, so for them
+     the condition is false and nothing changes. */
+  try {
+    const _cfg = (typeof customMapConfigs !== 'undefined')
+      ? customMapConfigs.find(c => c.id === id) : null;
+    const _paper = !!_cfg && (_cfg.type === 'wms' || _cfg.type === 'wms_tiles');
+    const _el = document.getElementById('map');
+    if (_el) _el.classList.toggle('paper-basemap', _paper);
+  } catch(_) {}
   try { map.removeLayer(currentBasemap); } catch(e) {}
   currentBasemap = layer; currentBasemapId = id;
   try { layer.addTo(map); } catch(e) { toastMsg('Map loading error', 'error'); return; }

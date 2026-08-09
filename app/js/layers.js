@@ -190,6 +190,76 @@ function _afterReorder() {
   if (orderedStoreIds.length) _reorderStore(orderedStoreIds, zById);
 }
 
+/* Legend reordering. HTML5 drag-and-drop is deliberately not used: Chromium starts a drag
+   from touch input only after a long press, and the gesture then fights the scrolling of
+   the list — on the device the reorder worked, but only with effort. Pointer Events cover
+   mouse, touch and pen through one path, so there is a single implementation.
+   The grip is the only handle: the row also carries a checkbox, a colour swatch and an
+   opacity slider, and starting a drag on those would fight with their own gestures. */
+const _DRAG_EDGE = 28;   // px from the list edge where auto-scroll kicks in
+const _DRAG_STEP = 10;   // px scrolled per pointermove inside that band
+
+function _bindReorder(item, handle, id) {
+  if (!handle) return;
+  handle.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;   // touch and pen always pass
+    const list = document.getElementById('layer-list');
+    if (!list) return;
+    // Keeps the panel from scrolling (touch) or selecting text (mouse) mid-drag.
+    e.preventDefault();
+    // Capture keeps the gesture on the grip while the row slides out from under the
+    // finger; the listeners still go on the document, because a capture that the browser
+    // refuses (it throws when the pointer is no longer active) would otherwise leave the
+    // drag receiving nothing at all.
+    try { handle.setPointerCapture(e.pointerId); } catch(_) {}
+    item.classList.add('dragging');
+    const pid = e.pointerId;
+    let changed = false;
+
+    const onMove = ev => {
+      if (ev.pointerId !== pid) return;
+      const y  = ev.clientY;
+      const lr = list.getBoundingClientRect();
+      // The list is a fixed-height scroll box: without this the entries outside its
+      // viewport are unreachable — the finger just runs out of list.
+      if      (y < lr.top    + _DRAG_EDGE) list.scrollTop -= _DRAG_STEP;
+      else if (y > lr.bottom - _DRAG_EDGE) list.scrollTop += _DRAG_STEP;
+      // Insert before the first sibling whose midpoint is below the pointer; past every
+      // midpoint the item belongs at the bottom.
+      const target = [...list.querySelectorAll('.layer-item')].find(el => {
+        if (el === item) return false;
+        const r = el.getBoundingClientRect();
+        return y < r.top + r.height / 2;
+      });
+      if (target) {
+        if (target !== item.nextElementSibling) { list.insertBefore(item, target); changed = true; }
+      } else if (list.lastElementChild !== item) {
+        list.appendChild(item); changed = true;
+      }
+    };
+
+    const onEnd = ev => {
+      if (ev && ev.pointerId !== pid) return;
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onEnd);
+      document.removeEventListener('pointercancel', onEnd);
+      item.classList.remove('dragging');
+      // A tap or a jitter that moved nothing must not renumber and persist every entry.
+      if (!changed) return;
+      const l = loadedLayers[id];
+      // A vector without its own pane lives in the shared overlayPane, which the legend
+      // z-scale skips: it can only be restacked by the Leaflet call. Everything else is
+      // handled by _afterReorder re-stacking the per-layer panes.
+      if (l && !l._isRaster && !l.options?.pane) try { if (l.bringToFront) l.bringToFront(); } catch(_) {}
+      _afterReorder();
+    };
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onEnd);
+    document.addEventListener('pointercancel', onEnd);
+  });
+}
+
 /* Startup replay. The three restore paths (file overlays, saved config, bundled config
    fetch) are independent and partly async, so instead of trying to sequence them each
    one just pokes this and the list is sorted once things settle. Entries that predate
@@ -291,7 +361,6 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
   if (opts.isWfs) item.dataset.isWfs = '1';
   if (opts.legacyAbove) item.dataset.legacyAbove = '1';   // pre-zOrder store, read once at migration
   if (opts.zOrder !== undefined && opts.zOrder !== null) item.dataset.zOrder = opts.zOrder;
-  item.setAttribute('draggable', 'true');
   item.innerHTML = `
     <span class="layer-drag" title="Drag to reorder">\u22EE</span>
     <input type="checkbox" ${initVisible ? 'checked' : ''} title="Show/hide">
@@ -370,37 +439,8 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
     if (opts.onDelete) opts.onDelete();
   });
 
-  // Drag-and-drop reordering
-  item.addEventListener('dragstart', e => {
-    e.dataTransfer.setData('text/plain', id);
-    e.dataTransfer.effectAllowed = 'move';
-    setTimeout(() => item.style.opacity = '0.4', 0);
-  });
-  item.addEventListener('dragend', () => {
-    item.style.opacity = '';
-    document.querySelectorAll('.layer-item').forEach(i => i.classList.remove('drag-over'));
-  });
-  item.addEventListener('dragover', e => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    document.querySelectorAll('.layer-item').forEach(i => i.classList.remove('drag-over'));
-    item.classList.add('drag-over');
-  });
-  item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
-  item.addEventListener('drop', e => {
-    e.preventDefault();
-    item.classList.remove('drag-over');
-    const fromId = e.dataTransfer.getData('text/plain');
-    if (fromId === id) return;
-    const fromItem = document.querySelector(`[data-id="${fromId}"]`);
-    if (!fromItem) return;
-    document.getElementById('layer-list').insertBefore(fromItem, item);
-    const fl = loadedLayers[fromId];
-    // File overlays are stacked by dedicated pane z-index (legend zone, across the
-    // cadastre); same-pane overlays (extra WFS/KML in overlayPane) still use bringToFront.
-    if (fl && !fl._isRaster && !fl.options?.pane) try { if (fl.bringToFront) fl.bringToFront(); } catch(e) {}
-    _afterReorder();
-  });
+  // Reordering: pointer-driven from the grip — see _bindReorder for why not HTML5 DnD.
+  _bindReorder(item, item.querySelector('.layer-drag'), id);
 
   // Rename on double-tap/dblclick
   const nameEl = item.querySelector('.layer-name');

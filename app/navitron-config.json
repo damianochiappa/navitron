@@ -135,7 +135,7 @@
       "useAs": "overlay",
       "opacity": 80,
       "color": "#22aa44",
-      "fillOpacity": 0.5,
+      "hollow": true,
       "pane": "wfs-particelle",
       "visible": true
     },
@@ -163,6 +163,34 @@
       "crs": "EPSG:4258",
       "protected": false,
       "minZoom": 8,
+      "useAs": "overlay",
+      "opacity": 80,
+      "visible": true
+    },
+    {
+      "id": "custom_ws_17",
+      "type": "wms",
+      "url": "https://wms.cartografia.agenziaentrate.gov.it/inspire/wms/ows01.php",
+      "name": "Catasto Acque",
+      "layers": "acque",
+      "version": "1.3.0",
+      "crs": "EPSG:4258",
+      "protected": false,
+      "minZoom": 14,
+      "useAs": "overlay",
+      "opacity": 80,
+      "visible": true
+    },
+    {
+      "id": "custom_ws_18",
+      "type": "wms",
+      "url": "https://wms.cartografia.agenziaentrate.gov.it/inspire/wms/ows01.php",
+      "name": "Catasto Strade",
+      "layers": "strade",
+      "version": "1.3.0",
+      "crs": "EPSG:4258",
+      "protected": false,
+      "minZoom": 14,
       "useAs": "overlay",
       "opacity": 80,
       "visible": true

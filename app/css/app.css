@@ -1,4 +1,5 @@
 /* ===== DESIGN TOKENS ===== */
+:root { color-scheme: dark; }
 :root {
   --bg:          #080d1a;
   --surface:     #101624;
@@ -371,7 +372,11 @@ html, body {
 }
 
 /* Layer list */
-#layer-list { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+#layer-list {
+  display: flex; flex-direction: column; gap: 4px;
+  max-height: clamp(220px, 40vh, 420px);
+  overflow-y: auto; overscroll-behavior: contain;
+}
 .layer-item {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 7px 8px;
@@ -382,13 +387,19 @@ html, body {
   transition: border-color var(--transition), background var(--transition);
 }
 .layer-item:hover { background: var(--surface3); border-color: rgba(91,156,246,.3); }
-.layer-item.drag-over { border-color: var(--accent); background: rgba(91,156,246,.08); }
+.layer-item.dragging { border-color: var(--accent); background: rgba(91,156,246,.08); opacity: .75; }
 .layer-item input[type=checkbox] { accent-color: var(--accent); flex-shrink: 0; }
 .layer-item .layer-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .layer-drag {
   cursor: grab; color: var(--text-muted); font-size: 14px;
-  padding: 0 2px; user-select: none; flex-shrink: 0;
+  padding: 0 6px; user-select: none; flex-shrink: 0;
   line-height: 1; opacity: .5;
+  /* Stretch to the height of the first flex line (the row, not the opacity slider below)
+     so the touch target is the full row height without changing the layout. */
+  display: flex; align-items: center; align-self: stretch;
+  /* The grip drives the reorder: leaving the default would let the browser claim the
+     gesture and scroll the list instead. */
+  touch-action: none;
   transition: opacity var(--transition);
 }
 .layer-item:hover .layer-drag { opacity: 1; }
@@ -582,6 +593,10 @@ body:has(#kml-edit-bar:not(.hidden)) #toast     { bottom: calc(var(--lane-bottom
   cursor: crosshair !important;
 }
 .leaflet-container { background: #080d1a; }
+/* Set by _applyBasemap while a WMS is the basemap: those are requested opaque on white,
+   so the gaps — image still loading, or below the layer's scale window — have to be paper
+   too, otherwise a blank sheet reads as a broken map. */
+#map.paper-basemap { background: #f6f5f1; }
 
 /* ===== STATUS BAR ===== */
 #statusbar {
@@ -875,6 +890,32 @@ a.polyline-measure-controlOnBgColor:hover {
 }
 .layer-item .layer-hollow:hover { color: var(--accent); border-color: rgba(91,156,246,.4); }
 .layer-item .layer-hollow.active { color: var(--accent); border-color: var(--accent); background: rgba(91,156,246,.12); }
+
+/* The two WFS-only actions had no rule at all and fell back to the browser's default
+   button chrome — a different size and border from every other control on the row. */
+.layer-item .layer-filter,
+.layer-item .layer-find {
+  width: 22px; height: 22px; background: none; border: none;
+  color: var(--text-muted); cursor: pointer; font-size: 13px; line-height: 1;
+  border-radius: 4px; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: color var(--transition), background var(--transition);
+}
+.layer-item .layer-filter:hover,
+.layer-item .layer-find:hover { color: var(--accent); background: rgba(91,156,246,.15); }
+
+/* Touch targets. 22 px is a mouse size: on a phone a WFS row carries six of these side
+   by side with Delete in the middle, so a mistap removes a layer. Android asks for 48 dp;
+   34 px inside a padded row is close enough to be safe. The name keeps a floor of 110 px
+   instead of being squeezed to nothing — the row already wraps, so the controls that no
+   longer fit flow onto a second line rather than eating the label. */
+@media (hover: none) {
+  .layer-item .layer-del, .layer-item .layer-exp, .layer-item .layer-zoom,
+  .layer-item .layer-edit, .layer-item .layer-hollow,
+  .layer-item .layer-filter, .layer-item .layer-find,
+  .layer-item .layer-color { width: 34px; height: 34px; }
+  .layer-item input[type=checkbox] { width: 24px; height: 24px; }
+  .layer-item .layer-name { min-width: 110px; }
+}
 
 /* Draw popup */
 .draw-save-btn {
@@ -1583,6 +1624,7 @@ a.polyline-measure-controlOnBgColor:hover {
   .basemap-item { padding: 10px 12px; gap: 11px; }
   .basemap-item span { font-size: 15px; }
   .layer-item { padding: 10px; font-size: 14px; }
+  .layer-drag { padding: 0 10px; font-size: 16px; }
   .layer-opacity-row span { font-size: 11px; }
 
   /* Draw */

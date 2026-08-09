@@ -420,13 +420,92 @@ document.getElementById('btn-clear-draw').addEventListener('click', () => {
 /* ===== GPS TRACK ===== */
 let trackActive = false, trackPoints = [], trackDistance = 0, trackPolyline = null;
 
+/* Spike rejection. Without a fix on the network the receiver sometimes places a point tens
+   of metres away from where the recent pace can explain: the line jumps out and back, and
+   the wrong vertex has to be deleted by hand afterwards. A point is credible when it is
+   consistent with its neighbours — if the last few steps have been about 3 m, the next one
+   cannot be 20.
+   The reference is the MEDIAN of the last few accepted steps, not their average: a single
+   bad step must not raise the very bar it is meant to fail. The comparison is on implied
+   speed, because fixes do not arrive at a fixed rate — the same 20 m mean different things
+   after one second and after twenty.
+   A real acceleration is not lost. A rejected fix is held rather than dropped, and as soon
+   as the following one agrees with it, both are played into the track: pulling away from a
+   stop, or coming out of a tunnel, costs one fix of latency, not a truncated track.
+   Standing still is deliberately NOT filtered: at a standstill every step is jitter, so the
+   median is jitter too and nothing stands out. Removing that cloud would need a minimum
+   displacement rule, which was considered and turned down — it also throws away the slow
+   genuine movement that looks exactly like it. */
+const _TRK_WIN   = 5;     // accepted steps kept as the reference
+const _TRK_SEED  = 3;     // steps needed before the filter starts judging
+const _TRK_K     = 4;     // times the median speed before a fix is called impossible
+const _TRK_FLOOR = 1.5;   // m/s — floor, so a slow stretch does not reject everything
+let _trkSpeeds = [];      // implied speed of the recent accepted steps
+let _trkHeld   = [];      // fixes rejected once, waiting to be confirmed or dropped
+
+function _trkSpeed(a, b) {
+  const dt = (b.time - a.time) / 1000;
+  if (!(dt > 0)) return null;                       // no usable interval, nothing to judge
+  return map.distance([a.lat, a.lng], [b.lat, b.lng]) / dt;
+}
+
+function _trkPlausible(prev, p) {
+  if (_trkSpeeds.length < _TRK_SEED) return true;   // still seeding the reference
+  const v = _trkSpeed(prev, p);
+  if (v == null) return true;
+  const sorted = [..._trkSpeeds].sort((x, y) => x - y);
+  const median = sorted[(sorted.length - 1) >> 1];
+  return v <= Math.max(_TRK_FLOOR, median * _TRK_K);
+}
+
+function _trkReset() { _trkSpeeds = []; _trkHeld = []; }
+
 function updateTrack(ll, alt, ts) {
+  const p = { lat: ll.lat, lng: ll.lng, alt, time: ts };
+  const last = trackPoints[trackPoints.length - 1];
+
+  if (last && !_trkPlausible(last, p)) {
+    _trkHeld.push(p);
+    if (_trkHeld.length >= 2) {
+      /* Confirmation has to be geometric, not another speed test: a held fix is fast by
+         definition, so judging it again with the reference that rejected it would never
+         let a real move through. What separates movement from noise is whether the held
+         fixes agree with EACH OTHER more than with where the track still believes it is —
+         jitter scatters around the last accepted point and comes back, a real move walks
+         away from it and stays away together. */
+      const first    = _trkHeld[0];
+      const apart    = map.distance([first.lat, first.lng], [p.lat, p.lng]);
+      const fromLast = map.distance([last.lat,  last.lng ], [p.lat, p.lng]);
+      if (apart < fromLast) {
+        const held = _trkHeld;
+        _trkHeld = [];
+        held.forEach(_trkAdd);       // replayed in order: geometry and timestamps intact
+        return;
+      }
+      // Still scattered: pure noise. Keep only the newest as the next candidate, so the
+      // buffer cannot grow and the track can still resync later.
+      _trkHeld = [p];
+    }
+    return;
+  }
+
+  _trkHeld = [];
+  _trkAdd(p);
+}
+
+function _trkAdd(p) {
   if (trackPoints.length > 0) {
     const prev = trackPoints[trackPoints.length - 1];
-    trackDistance += map.distance([prev.lat, prev.lng], [ll.lat, ll.lng]);
+    trackDistance += map.distance([prev.lat, prev.lng], [p.lat, p.lng]);
+
+    const v = _trkSpeed(prev, p);
+    if (v != null) {
+      _trkSpeeds.push(v);
+      if (_trkSpeeds.length > _TRK_WIN) _trkSpeeds.shift();
+    }
 
     // Bearing in statusbar
-    const brg = calcBearing(prev.lat, prev.lng, ll.lat, ll.lng);
+    const brg = calcBearing(prev.lat, prev.lng, p.lat, p.lng);
     const dirs = ['N','NE','E','SE','S','SW','W','NW'];
     const dir  = dirs[Math.round(brg/45) % 8];
     const brgItem = document.getElementById('sb-brg-item');
@@ -436,9 +515,9 @@ function updateTrack(ll, alt, ts) {
       brgItem.style.display = '';
     }
   }
-  trackPoints.push({ lat: ll.lat, lng: ll.lng, alt, time: ts });
+  trackPoints.push(p);
 
-  const lls = trackPoints.map(p => [p.lat, p.lng]);
+  const lls = trackPoints.map(q => [q.lat, q.lng]);
   if (trackPolyline) trackPolyline.setLatLngs(lls);
   else trackPolyline = L.polyline(lls, { color: '#e05252', weight: 3, opacity: 0.85 }).addTo(map);
 
@@ -466,6 +545,9 @@ document.getElementById('btn-track-toggle').addEventListener('click', () => {
   if (!trackActive && !gpsActive) { toastMsg('Enable GPS first', 'error', undefined, 'sidebar'); return; }
   trackActive = !trackActive;
   if (trackActive) {
+    // A new session starts with no reference: the pace of the previous one says nothing
+    // about this one, and a stale one would judge the first fixes against the wrong bar.
+    _trkReset();
     btn.innerHTML = '<span class="track-rec-dot"></span>Stop track';
     btn.style.background = 'var(--danger)';
     document.getElementById('track-stats').style.display = 'block';
@@ -546,7 +628,7 @@ document.getElementById('btn-track-export-kml').addEventListener('click', export
 
 document.getElementById('btn-track-clear').addEventListener('click', () => {
   if (!confirm('Clear the track?')) return;
-  trackPoints = []; trackDistance = 0;
+  trackPoints = []; trackDistance = 0; _trkReset();
   if (trackPolyline) { map.removeLayer(trackPolyline); trackPolyline = null; }
   document.getElementById('track-pts').textContent  = '0';
   document.getElementById('track-dist').textContent = '0 m';

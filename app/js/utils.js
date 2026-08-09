@@ -7,6 +7,67 @@
    UTILS — coordinate math, toast, file I/O
 ===================================================== */
 
+/* ===== UTM =====
+   Replaces the vendored utm.js + utmref.js (Johannes Rudolph), dropped because they
+   carried no explicit licence — not something an app that ships an attributions screen
+   can state precisely — and because their fromLatLng applied the Norway/Svalbard zone
+   exceptions to the zone *label* while still projecting on the unadjusted central
+   meridian, so those coordinates came out on the wrong meridian (330 km off at Bergen).
+   This rides on proj4 (MIT), already loaded for the WFS reader. The shape of the values
+   is unchanged ({zone:'32T', x, y} as zero-padded strings), so no call site needed
+   touching. */
+const _UTM_BANDS = 'CDEFGHJKLMNPQRSTUVWXX';   // 8° bands from 80°S; I and O are skipped
+
+function _utmBand(lat) {
+  return (lat < -80 || lat > 84) ? '' : _UTM_BANDS.charAt(Math.floor((lat + 80) / 8));
+}
+
+/* Zone number including the two historical exceptions. Unlike the old library these also
+   drive the projection below, which is the whole point of an exception. */
+function _utmZone(lat, lon) {
+  if (lat >= 56 && lat < 64 && lon >= 3 && lon < 12) return 32;          // southwest Norway
+  if (lat >= 72 && lat < 84) {                                           // Svalbard
+    if (lon >= 0  && lon < 9)  return 31;
+    if (lon >= 9  && lon < 21) return 33;
+    if (lon >= 21 && lon < 33) return 35;
+    if (lon >= 33 && lon < 42) return 37;
+  }
+  return Math.floor((lon + 180) / 6) + 1;
+}
+
+const _utmDef = (zone, south) =>
+  '+proj=utm +zone=' + zone + (south ? ' +south' : '') + ' +datum=WGS84 +units=m +no_defs';
+
+const UTM = {
+  /* {lat,lng} -> {zone:'32T', x:'0390000', y:'4990000'} (undefined outside the UTM band,
+     as before: the readouts already treat a missing value as '--'). */
+  fromLatLng(latlng) {
+    const lat = parseFloat(latlng.lat), lon = parseFloat(latlng.lng);
+    if (!isFinite(lat) || !isFinite(lon) || lat <= -80 || lat >= 84) return;
+    const zone = _utmZone(lat, lon);
+    const p = proj4('EPSG:4326', _utmDef(zone, lat < 0), [lon, lat]);
+    return {
+      zone: String(zone).padStart(2, '0') + _utmBand(lat),
+      x: '0' + Math.round(p[0]),
+      y: String(Math.round(p[1])).padStart(7, '0')
+    };
+  },
+
+  /* {zone:'32T'|'32'|'5Q', x, y} -> {lat, lng}. A missing band is read as northern
+     hemisphere, which is what the old implementation did with typed-in coordinates. */
+  toLatLng(utm) {
+    if (!utm || utm.zone === '' || utm.x === '' || utm.y === '') return;
+    const m = String(utm.zone).trim().match(/^(\d{1,2})\s*([A-Za-z]?)$/);
+    if (!m) return;
+    const zone = parseInt(m[1], 10);
+    const band = m[2].toUpperCase();
+    const x = parseFloat(utm.x), y = parseFloat(utm.y);
+    if (!zone || zone > 60 || !isFinite(x) || !isFinite(y)) return;
+    const p = proj4(_utmDef(zone, !!band && band < 'N'), 'EPSG:4326', [x, y]);
+    return { lat: p[1], lng: p[0] };
+  }
+};
+
 function dd2dms(dd) {
   const d = Math.floor(Math.abs(dd));
   const m = Math.floor((Math.abs(dd) - d) * 60);
@@ -40,20 +101,10 @@ function parseMGRS(raw) {
     const pt = window.mgrs.toPoint(s);
     if (pt && !isNaN(pt[0]) && !isNaN(pt[1])) return { lat: pt[1], lon: pt[0] };
   } catch(e) {}
-  const m = s.match(/^(\d{1,2}[A-Z])([A-Z]{2})(\d{2,10})$/);
-  if (!m) return null;
-  const zone = m[1], band = m[2], digits = m[3];
-  if (digits.length % 2 !== 0) return null;
-  const half = digits.length / 2;
-  const ex = digits.substring(0, half).padEnd(5, '0');
-  const nx = digits.substring(half).padEnd(5, '0');
-  try {
-    const utm = UTMREF.toUTM({ zone, band, x: band[0], y: band[1] });
-    const fullE = parseInt(utm.x) * 100000 + parseInt(ex);
-    const fullN = parseInt(utm.y) * 100000 + parseInt(nx);
-    const ll = UTM.toLatLng({ zone, x: fullE, y: fullN });
-    if (ll && !isNaN(ll.lat)) return ll;
-  } catch(e) {}
+  /* mgrs.js (MIT) is the only reader now. The hand-rolled fallback that used to sit here
+     decoded the 100 km square through utmref.js, the library with the unclear licence:
+     it could only ever fire on a string mgrs.js had already rejected as invalid, so it
+     bought nothing but the dependency. */
   return null;
 }
 
@@ -62,12 +113,7 @@ function mgrsForward(lon, lat) {
     const s = window.mgrs.forward([lon, lat], 5);
     if (s && s.length > 5) return s;
   } catch(e) {}
-  try {
-    const utm = UTM.fromLatLng({ lat, lng: lon });
-    const ref = UTMREF.fromUTM({ zone: utm.zone, x: String(Math.round(utm.x)), y: String(Math.round(utm.y)) });
-    if (ref) return ref.zone + ref.band + ref.x + ref.y;
-  } catch(e) {}
-  return '--';
+  return '--';   // see parseMGRS: the utmref.js fallback bought nothing and is gone
 }
 
 function calcBearing(lat1, lon1, lat2, lon2) {

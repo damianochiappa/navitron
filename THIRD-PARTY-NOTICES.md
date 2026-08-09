@@ -60,10 +60,6 @@ Navitron includes the following open-source libraries. Their licenses are reprod
 - License: MIT
 - https://github.com/Turfjs/turf
 
-## utm.js / utmref.js (Johannes Rudolph)
-- License: not explicitly declared by the author; the source contains MIT/LGPL-licensed fragments cited inline
-- Author: Johannes Rudolph &lt;johannes.rudolph@gmx.com&gt;
-
 ---
 
 ## Runtime services (no bundled library)

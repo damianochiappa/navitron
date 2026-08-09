@@ -161,6 +161,13 @@
 
   /* ===== Admin WFS (PCN minambiente) ===== */
 
+  /* Trento and Bolzano run their own provincial land registry (sistema tavolare), so the
+     Agenzia delle Entrate services this wizard queries hold no data for them. They are the
+     only two provinces of ISTAT region 4, so dropping the whole region drops exactly them:
+     offering it would produce an empty comune list and look like a broken service.
+     Filtered on the code, not the name — den_reg spelling varies between PCN datasets. */
+  const _EXCLUDED_REGION_CODES = { '4': 1 };   // Trentino-Alto Adige
+
   async function loadRegions() {
     if (_regionsCache.value) return _regionsCache.value;
     setStatus('Loading regions\u2026');
@@ -173,7 +180,7 @@
     for (let i = 0; i < feats.length; i++) {
       const name = textOf(feats[i], 'den_reg');
       const code = textOf(feats[i], 'cod_reg');
-      if (!name || !code || seen[code]) continue;
+      if (!name || !code || seen[code] || _EXCLUDED_REGION_CODES[code]) continue;
       seen[code] = 1;
       out.push({ name, code });
     }
