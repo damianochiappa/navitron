@@ -425,18 +425,27 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
       downloadFile(rawContent, stem + ext, rawMime);
     });
   });
+  /* Removal is not the same gesture as hiding, and the ✕ sits next to the visibility
+     toggle: the warning names the cheaper alternative rather than just asking twice. */
   item.querySelector('.layer-del').addEventListener('click', () => {
-    const l = loadedLayers[id];
-    map.removeLayer(l);
-    delete loadedLayers[id];
-    // Drop this overlay's dedicated stacking pane so panes don't accumulate.
-    if (item.dataset.ovPane) { const pe = map.getPane(item.dataset.ovPane); if (pe && pe.remove) pe.remove(); }
-    item.remove();
-    if (!Object.keys(loadedLayers).length) {
-      document.getElementById('layer-list').innerHTML = '<p class="layer-empty">No layers loaded</p>';
-    }
-    _applyOverlayZOrder();
-    if (opts.onDelete) opts.onDelete();
+    showConfirmModal(
+      'Are you sure? Consider turning the layer off instead of removing it: if you remove ' +
+      'it, you will have to add it again by hand later.',
+      () => {
+        const l = loadedLayers[id];
+        map.removeLayer(l);
+        delete loadedLayers[id];
+        // Drop this overlay's dedicated stacking pane so panes don't accumulate.
+        if (item.dataset.ovPane) { const pe = map.getPane(item.dataset.ovPane); if (pe && pe.remove) pe.remove(); }
+        item.remove();
+        if (!Object.keys(loadedLayers).length) {
+          document.getElementById('layer-list').innerHTML = '<p class="layer-empty">No layers loaded</p>';
+        }
+        _applyOverlayZOrder();
+        if (opts.onDelete) opts.onDelete();
+      },
+      { rememberKey: 'navitron_hide_layer_del_warn', okLabel: 'Remove' }
+    );
   });
 
   // Reordering: pointer-driven from the grip — see _bindReorder for why not HTML5 DnD.
@@ -1220,6 +1229,12 @@ function _cancelKmlEdit() {
 }
 
 /* ===== DISSOLVE WIZARD ===== */
+/* Douglas-Peucker tolerance applied to the union, in degrees. Zero on purpose: the
+   cadastral vertices come from the source geometry and must survive the dissolve
+   untouched — any non-zero value moves the boundary of the result. The simplify call
+   is kept because at 0 it still drops duplicate and exactly collinear vertices. */
+const _DISSOLVE_TOLERANCE = 0;
+
 function _dissolveUpdateBtn() {
   const ok = document.getElementById('dissolve-ok');
   if (!ok) return;
@@ -1320,7 +1335,7 @@ function _proceedDissolve() {
     if (txt)  txt.textContent = 'Simplifying…';
 
     setTimeout(() => {
-      try { result = turf.simplify(result, { tolerance: 0.000036, highQuality: true }); } catch(_) {}
+      try { result = turf.simplify(result, { tolerance: _DISSOLVE_TOLERANCE, highQuality: true }); } catch(_) {}
       if (!result || !result.geometry) {
         if (wrap) wrap.classList.add('hidden');
         if (ok) { ok.disabled = false; ok.className = 'btn btn-success'; }

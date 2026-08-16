@@ -461,25 +461,44 @@
         (typeof customMapConfigs !== 'undefined' ? customMapConfigs : [])
           .filter(c => c.offline).map(c => c.id)
       );
+      /* A map that cannot be downloaded is listed anyway, disabled, with the reason next to
+         it. Dropping it silently was worse than useless: someone who had just added their own
+         WMS found it missing from here and no explanation anywhere — and, when the list came
+         out empty, an invitation to add a basemap, which is exactly what they had done. The
+         reason is the answer to the question being asked at that moment. */
+      let usable = 0;
       document.querySelectorAll('#basemap-list input[name="basemap"]').forEach(radio => {
         const id = radio.value;
         if (offlineIds.has(id)) return;
         const entry = BASEMAPS[id];
-        if (!entry || entry._needsCreds || typeof entry.getTileUrl !== 'function') return;
-        if (_offlineBlocked(entry)) return;   // provider prohibits bulk download → not offerable offline
+        if (!entry) return;
         const span = radio.closest('label') && radio.closest('label').querySelector('span');
         const name = span ? span.textContent.trim() : id;
+        let why = '';
+        if (entry._needsCreds) why = 'requires sign-in';
+        else if (typeof entry.getTileUrl !== 'function') why = 'single image, not tiled';
+        else if (_offlineBlocked(entry)) why = 'the provider prohibits bulk download';
         const o = document.createElement('option');
-        o.value = id; o.textContent = name;
+        o.value = id;
+        o.textContent = why ? name + ' — not downloadable (' + why + ')' : name;
+        if (why) o.disabled = true; else usable++;
         mapSelect.appendChild(o);
       });
+      if (!usable) {
+        const o = document.createElement('option');
+        o.value = ''; o.disabled = true; o.selected = true;
+        o.textContent = mapSelect.options.length
+          ? 'None of the active maps can be downloaded'
+          : 'No downloadable map — add one under Layers';
+        mapSelect.insertBefore(o, mapSelect.firstChild);
+      }
+      _syncTos();   // the list was rebuilt: match the notice to whatever is now selected
     }
 
-    if (mapSelect) {
-      mapSelect.addEventListener('change', () => {
-        if (tosWarn) tosWarn.style.display = TOS_MAPS.includes(mapSelect.value) ? '' : 'none';
-      });
+    function _syncTos() {
+      if (tosWarn) tosWarn.style.display = TOS_MAPS.includes(mapSelect && mapSelect.value) ? '' : 'none';
     }
+    if (mapSelect) mapSelect.addEventListener('change', _syncTos);
 
     const tabBtn = document.querySelector('[data-panel="offline"]');
     if (tabBtn) tabBtn.addEventListener('click', _populateSelect);

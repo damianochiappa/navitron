@@ -1377,7 +1377,12 @@ function _selExportKML() {
   const skipBtn = document.getElementById('ob-skip');
   const guideBtn = document.getElementById('ob-guide-btn');
   if (!ob) return;
-  if (localStorage.getItem('navitron_onboarded')) return;
+  /* Guarded: this runs inside an IIFE, so a throw here would abort the rest of map.js —
+     _createLayer and _WFSLayer included. Storage being unreadable must cost the onboarding
+     flag, nothing else. */
+  let _obDone = false;
+  try { _obDone = !!localStorage.getItem('navitron_onboarded'); } catch (_) {}
+  if (_obDone) return;
 
   ob.classList.remove('hidden');
   let cur = 0;
@@ -1390,9 +1395,12 @@ function _selExportKML() {
     nextBtn.textContent = cur === total - 1 ? 'Done ✓' : 'Next ›';
   }
 
+  /* Hide first, remember second: this overlay is the only thing between the user and the
+     app, so a storage write that throws must not be able to trap them on it. Worst case
+     the onboarding shows once more on the next launch. */
   function _close() {
-    localStorage.setItem('navitron_onboarded', '1');
     ob.classList.add('hidden');
+    try { localStorage.setItem('navitron_onboarded', '1'); } catch (_) {}
   }
 
   nextBtn.addEventListener('click', () => { cur < total - 1 ? _goTo(cur + 1) : _close(); });

@@ -522,8 +522,13 @@ function _trkAdd(p) {
   else trackPolyline = L.polyline(lls, { color: '#e05252', weight: 3, opacity: 0.85 }).addTo(map);
 
   document.getElementById('track-pts').textContent  = trackPoints.length;
-  const d = trackDistance;
-  document.getElementById('track-dist').textContent = d >= 1000 ? (d/1000).toFixed(2) + ' km' : Math.round(d) + ' m';
+  document.getElementById('track-dist').textContent = _trackLengthLabel(trackDistance);
+}
+
+/* Same wording on screen and in the exported file: a track whose panel says 1.23 km must
+   not export a different figure. Metres below 1 km, two decimals of a kilometre above. */
+function _trackLengthLabel(m) {
+  return m >= 1000 ? (m / 1000).toFixed(2) + ' km' : Math.round(m) + ' m';
 }
 
 function exportGPX() {
@@ -533,9 +538,13 @@ function exportGPX() {
     (p.alt != null ? `<ele>${p.alt.toFixed(1)}</ele>` : '') +
     `<time>${new Date(p.time).toISOString()}</time></trkpt>`
   ).join('\n');
+  /* Same summary the KML carries, so the two exports of one track do not describe it
+     differently. <desc> sits between <name> and <trkseg> because GPX 1.1 fixes that order. */
+  const lenLabel = _trackLengthLabel(trackDistance);
+  const nPts = trackPoints.length;
   showPromptModal('File name:', 'track', fname => {
     const base = (((fname || 'track').trim() || 'track')).replace(/\.gpx$/i, '');
-    const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Navitron" xmlns="http://www.topografix.com/GPX/1/1">\n  <trk><name>${_xmlEsc(base)}</name><trkseg>\n${pts}\n  </trkseg></trk>\n</gpx>`;
+    const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Navitron" xmlns="http://www.topografix.com/GPX/1/1">\n  <trk><name>${_xmlEsc(base)}</name><desc>Length: ${lenLabel} — ${nPts} points</desc><trkseg>\n${pts}\n  </trkseg></trk>\n</gpx>`;
     downloadFile(gpx, base + '.gpx', 'application/gpx+xml');
   }, 'The .gpx file is saved to your device Downloads folder.');
 }
@@ -615,10 +624,15 @@ function exportKML() {
   const coords = trackPoints.map(p =>
     p.lng.toFixed(6) + ',' + p.lat.toFixed(6) + (p.alt != null ? ',' + p.alt.toFixed(1) : ',0')
   ).join(' ');
+  /* Length travels twice on purpose: <description> is what an earth browser shows on click,
+     ExtendedData in raw metres is what a GIS can read back as a field. */
+  const lenLabel = _trackLengthLabel(trackDistance);
+  const lenMetres = trackDistance.toFixed(1);
+  const nPts = trackPoints.length;
   showPromptModal('File name:', 'track', fname => {
     const base = (((fname || 'track').trim() || 'track')).replace(/\.kml$/i, '');
     const nm = _xmlEsc(base);
-    const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n  <Document>\n    <name>${nm}</name>\n    <Placemark>\n      <name>${nm}</name>\n      <LineString>\n        <tessellate>1</tessellate>\n        <altitudeMode>clampToGround</altitudeMode>\n        <coordinates>${coords}</coordinates>\n      </LineString>\n    </Placemark>\n  </Document>\n</kml>`;
+    const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n  <Document>\n    <name>${nm}</name>\n    <Placemark>\n      <name>${nm}</name>\n      <description>Length: ${lenLabel} — ${nPts} points</description>\n      <ExtendedData>\n        <Data name="length_m"><displayName>Length (m)</displayName><value>${lenMetres}</value></Data>\n        <Data name="points"><displayName>Points</displayName><value>${nPts}</value></Data>\n      </ExtendedData>\n      <LineString>\n        <tessellate>1</tessellate>\n        <altitudeMode>clampToGround</altitudeMode>\n        <coordinates>${coords}</coordinates>\n      </LineString>\n    </Placemark>\n  </Document>\n</kml>`;
     downloadFile(kml, base + '.kml', 'application/vnd.google-earth.kml+xml');
   }, 'The .kml file is saved to your device Downloads folder.');
 }
