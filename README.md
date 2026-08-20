@@ -40,7 +40,7 @@ To update, just install the latest release over the existing one: the app update
 - **GPS** — real-time position, accuracy circle, UTM/MGRS coordinates, terrain elevation (Open-Meteo); flight mode auto-detection (AGL threshold)
 - **Navigation** — OSRM routing (driving, cycling, walking); heading-up map rotation with direction arrow; off-route detection and automatic recalculation; speed/distance/ETA HUD; walking view cone
 - **Track recording** — GPS track with stats; elevation profile chart; export as GPX or KML
-- **Draw & measure** — markers, polylines, polygons, circles; polyline measurement; distance/area calculation
+- **Draw & measure** — markers, polylines, polygons, circles; polyline measurement; distance/area calculation on the WGS 84 ellipsoid
 - **ArcGIS Online** — token authentication for protected services
 
 ---
@@ -138,7 +138,7 @@ All other third-party libraries are MIT, BSD-2, or Apache-2.0 — see [NOTICES](
 | [turf.js](https://turfjs.org) | MIT |
 | [proj4js](https://github.com/proj4js/proj4js) | MIT |
 | [mgrs.js](https://github.com/proj4js/mgrs) | MIT |
-| [tokml](https://github.com/tmcw/tokml) | MIT |
+| [tokml](https://github.com/tmcw/tokml) | MIT (patched — see `app/lib/tokml.js`) |
 | [toGeoJSON](https://github.com/mapbox/togeojson) | BSD-2-Clause |
 | [JSZip](https://stuk.github.io/jszip) | MIT / GPL-3.0 (dual) |
 

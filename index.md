@@ -73,7 +73,7 @@ Per aggiornare, installa la release più recente sopra quella esistente: l'app s
 - **GPS** — posizione in tempo reale, cerchio di accuratezza, coordinate UTM/MGRS, quota del terreno (Open-Meteo)
 - **Navigazione** — routing OSRM (auto, bici, a piedi); rotazione mappa heading-up con freccia di direzione; rilevamento fuori-rotta e ricalcolo automatico; HUD velocità/distanza/ETA; cono di visuale a piedi
 - **Registrazione tracce** — traccia GPS con statistiche; export in GPX o KML
-- **Disegno e misura** — marker, polilinee, poligoni, cerchi; misura polilinee; calcolo distanze/aree
+- **Disegno e misura** — marker, polilinee, poligoni, cerchi; misura polilinee; calcolo di distanze e aree sull’ellissoide WGS 84
 - **ArcGIS Online** — autenticazione a token per servizi protetti
 
 ---

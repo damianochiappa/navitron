@@ -365,7 +365,7 @@ function addLayerToList(layer, name, rawContent, rawMime, opts) {
     <span class="layer-drag" title="Drag to reorder">\u22EE</span>
     <input type="checkbox" ${initVisible ? 'checked' : ''} title="Show/hide">
     <span class="layer-name" title="${name} (double-tap to rename)">${name}</span>
-    ${isRaster ? '' : `<input type="color" class="layer-color" value="${initColor}" title="Layer color">`}
+    ${isRaster ? '' : `<input type="color" class="layer-color" value="${initColor}" title="Layer color" list="app-colors">`}
     ${isRaster ? '' : `<button class="layer-hollow${initHollow ? ' active' : ''}" title="Hollow — no fill">\u2205</button>`}
     ${isRaster ? '' : '<button class="layer-zoom" title="Zoom to layer">\u29C6</button>'}
     ${opts.isWfs ? '<button class="layer-find" title="Find filtered features (ignore viewport)">\u2316</button>' : ''}
