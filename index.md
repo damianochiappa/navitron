@@ -66,31 +66,62 @@ Per aggiornare, installa la release più recente sopra quella esistente: l'app s
 - **Catasto (Italia)** — precaricati e attivi all'avvio: particelle e fogli del Catasto Terreni (WFS), etichette particelle, Catasto Fabbricati, Catasto Acque, Catasto Strade e confini provinciali (WMS), tutti dell'Agenzia delle Entrate INSPIRE. Puoi aggiungerne altri a piacere dai vari portali (PCN minambiente, IGM, Geoportale Nazionale, ArcGIS/ESRI) via "Add web map": restano salvati e si ricaricano ai riavvii
 - **Punti fiduciali (Italia)** — i PF non sono precaricati. Dove l'ente regionale li pubblica via WFS (es. Piemonte) puoi aggiungerli come layer interrogabile; altrimenti puoi caricarli da un KML ricavato dalla TAF, la tabella dei punti fiduciali distribuita dall'Agenzia delle Entrate. Una volta caricati restano salvati e si ricaricano ai riavvii
 - **Wizard catasto (Italia)** — menu a tendina a cascata da regione a foglio; filtro opzionale sulla particella applicato al layer CadastralParcel, con zoom automatico ed evidenziazione della selezione
-- **Cache tile offline** — scarica una qualsiasi basemap entro un confine KML per l'uso offline (Service Worker)
+- **Cache tile offline** — scarica una basemap a tile entro un confine KML per l'uso offline (Service Worker). Le poche che non si prestano — un WMS non a tile, quelle con credenziali, quelle il cui fornitore vieta la copia massiva — restano in elenco ma disattivate, con il motivo scritto; sulle altre compare prima un avviso sulle condizioni d'uso del fornitore
 - **Import KML/KMZ/GeoJSON/GPX** — gestione layer, editing dei vertici, popup degli attributi, dissolve dei poligoni (turf.js), rinomina, export
 - **Strumenti coordinate** — vai-a per DD/DMS/UTM/MGRS, convertitore di formato, segnaposti
 - **Mappe** — OpenTopoMap, OpenStreetMap, ESRI (Satellite, Topo, NatGeo), Stadia Satellite, CartoDB; layer WMS/WMTS/ArcGIS personalizzati con controllo opacità
 - **GPS** — posizione in tempo reale, cerchio di accuratezza, coordinate UTM/MGRS, quota del terreno (Open-Meteo)
 - **Navigazione** — routing OSRM (auto, bici, a piedi); rotazione mappa heading-up con freccia di direzione; rilevamento fuori-rotta e ricalcolo automatico; HUD velocità/distanza/ETA; cono di visuale a piedi
 - **Registrazione tracce** — traccia GPS con statistiche; export in GPX o KML
-- **Disegno e misura** — marker, polilinee, poligoni, cerchi; misura polilinee; calcolo di distanze e aree sull’ellissoide WGS 84
+- **Disegno e misura** — marker, polilinee, poligoni, cerchi; misura polilinee; distanze geodetiche sull’ellissoide WGS 84, aree sulla sua sfera autalica (quella di pari superficie)
 - **ArcGIS Online** — autenticazione a token per servizi protetti
+
+---
+
+## Cosa questa app non fa
+
+Vale la pena dirlo prima dell'installazione, non dopo.
+
+- **Non è un navigatore stradale.** La cartografia è raster e non contiene la rete stradale
+  vettoriale: l'app disegna il percorso e indica la direzione, ma non dà indicazioni di svolta né
+  istruzioni vocali.
+- **I confini non hanno valore legale.** La cartografia catastale ha un'imprecisione propria,
+  dell'ordine di alcuni metri, che nessuna app può correggere. Serve a riconoscere una particella,
+  non a definire un confine di proprietà: la determinazione dei confini, i frazionamenti e ogni
+  atto con rilevanza legale restano di competenza di un tecnico qualificato, sulla documentazione
+  catastale ufficiale e con un rilievo strumentale.
+- **L'area che leggi non è la superficie di visura.** Il numero nel popup è calcolato sulla
+  geometria pubblicata dall'Agenzia delle Entrate — per questo si chiama area geometrica: dice
+  quanto è estesa la forma sulla mappa, non quanto risulta al catasto. La superficie ufficiale è
+  quella della visura, e le due possono differire.
+- **Diverse funzioni richiedono la connessione**, e sono proprio quelle che si usano di più: la
+  consultazione del catasto (i dati arrivano dai servizi dell'Agenzia al momento della richiesta e
+  non ne viene conservata copia), la ricerca dei luoghi, il calcolo e il ricalcolo dei percorsi, la
+  quota del terreno. Senza rete restano le mappe scaricate, i livelli salvati, il GPS, il disegno,
+  le misure e le tracce.
+- **Il download offline ha dei limiti, ma sono pochi.** Quasi tutte le mappe di sfondo si
+  scaricano. Restano fuori un WMS non a tile — che tile non ne ha — le sorgenti che richiedono
+  credenziali e quelle il cui fornitore vieta la copia massiva: compaiono in elenco disattivate,
+  col motivo scritto accanto. Per le altre l'app mostra un avviso prima di partire, perché le
+  condizioni d'uso dei fornitori di tile pongono comunque dei limiti allo scarico di grandi
+  quantità, e rispettarle resta responsabilità di chi scarica.
+- **Trentino-Alto Adige non è coperto.** Trento e Bolzano hanno un catasto provinciale proprio
+  (sistema tavolare), che i servizi dell'Agenzia delle Entrate non pubblicano: per questo le due
+  province non compaiono nella ricerca guidata.
+
+---
+
+## Note d'uso
+
+Navitron è uno strumento di consultazione e orientamento sul terreno, non un sostituto dei software catastali professionali.
+
+L'app funziona anche senza connessione, ma muoversi in aree isolate o impervie comporta rischi che nessuno strumento elimina: Navitron aiuta a orientarsi, non sostituisce preparazione, attrezzatura adeguata e prudenza. La responsabilità della propria sicurezza resta di chi si muove sul terreno.
 
 ---
 
 ## Compilazione dai sorgenti
 
 Per contribuire e compilare dai sorgenti (build on-device con Termux + proot-distro), vedi le istruzioni complete nel **[README del repository](https://github.com/damianochiappa/navitron#build-from-source-advanced-optional)**.
-
----
-
-## Note d'uso
-
-Navitron è uno strumento di consultazione e orientamento sul terreno. I confini catastali che visualizza provengono dai servizi pubblici INSPIRE dell'Agenzia delle Entrate e hanno una precisione dell'ordine di alcuni metri: sono adatti a individuare e riconoscere una particella, non a definire un confine di proprietà. La determinazione dei confini, i tipi di frazionamento e ogni atto con rilevanza legale restano di competenza di un tecnico qualificato, sulla base della documentazione catastale ufficiale e di un rilievo strumentale.
-
-L'area che l'app riporta per una particella è calcolata sulla geometria pubblicata dall'Agenzia delle Entrate — per questo si chiama area geometrica. Dice quanto è estesa la forma disegnata sulla mappa, non quanto risulta al catasto: la superficie ufficiale è quella della visura, e le due possono differire.
-
-L'app funziona anche senza connessione, ma muoversi in aree isolate o impervie comporta rischi che nessuno strumento elimina: Navitron aiuta a orientarsi, non sostituisce preparazione, attrezzatura adeguata e prudenza. La responsabilità della propria sicurezza resta di chi si muove sul terreno.
 
 ---
 

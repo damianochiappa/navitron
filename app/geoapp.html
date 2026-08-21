@@ -676,7 +676,6 @@
               <div class="guide-item"><span class="guide-key">Draw › GPS</span><span class="guide-desc">Start/stop GPS track — when done, export as GPX or KML, and optionally save the track as a drawing (it will appear in the drawings list with the name you choose)</span></div>
               <div class="guide-item"><span class="guide-key">Status bar</span><span class="guide-desc">Shows LAT, LON, DM, UTM, MGRS, accuracy, speed (km/h), heading, elevation, zoom, CRS — scroll horizontally if items are cut off</span></div>
               <div class="guide-item"><span class="guide-key">Elev profile</span><span class="guide-desc">After stopping a track with altitude data — shows chart of elevation vs distance</span></div>
-              <div class="guide-item"><span class="guide-key">✈ Flight mode</span><span class="guide-desc">When GPS altitude is &gt;200 m above terrain (AGL), the position icon switches to an airplane that rotates with heading, and a Flight panel appears (bottom-left) showing SPD, AGL, ALT and HDG — updates live, draggable, closeable</span></div>
             </div>
 
             <div class="guide-section">
@@ -687,7 +686,7 @@
             <div class="guide-section">
               <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3,11 22,2 13,21 11,13 3,11"/></svg>Navigation</h4>
               <div class="guide-item"><span class="guide-key">Arrow btn ↘</span><span class="guide-desc">Set destination by address or map tap — choose car/walk/bike — OSRM routing</span></div>
-              <div class="guide-item"><span class="guide-key">Map bearing</span><span class="guide-desc">While navigation is active the map rotates track-up to follow your direction of travel (from GPS) — this happens even when rotation is locked to north, and the compass ↘ glows amber to show it. When you stop moving it holds its last bearing (no spinning); flight mode is excluded. Ending navigation returns the map to north, unless you had turned on free rotation via the compass.</span></div>
+              <div class="guide-item"><span class="guide-key">Map bearing</span><span class="guide-desc">While navigation is active the map rotates track-up to follow your direction of travel (from GPS) — this happens even when rotation is locked to north, and the compass ↘ glows amber to show it. When you stop moving it holds its last bearing (no spinning). Ending navigation returns the map to north, unless you had turned on free rotation via the compass.</span></div>
               <div class="guide-item"><span class="guide-key">View cone</span><span class="guide-desc">In walking mode a 70° / 45 m sector is drawn along your direction of travel while moving; it hides when you stop, since there is no travel direction then</span></div>
               <div class="guide-item"><span class="guide-key">Nav HUD</span><span class="guide-desc">A compact panel (bottom-left) shows live SPD, DST to destination and ETA while navigating. Draggable by its header, hides automatically when navigation ends</span></div>
               <div class="guide-item"><span class="guide-key">Off-route</span><span class="guide-desc">Auto-recalculates route if you deviate &gt;50 m</span></div>
@@ -1027,7 +1026,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">2.3.0</span></div>
+      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">2.3.3</span></div>
       <div class="about-row"><span class="lbl">Author</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">License</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — Open Source</a></span></div>
       <div class="about-row"><span class="lbl">Engine</span><span class="val">Leaflet · Cordova · Android</span></div>
@@ -1079,6 +1078,8 @@
 <!-- UTM / MGRS -->
 <!-- MGRS (UTM lives in js/utils.js, on proj4) -->
 <script src="lib/mgrs.js"></script>
+<!-- EGM96 geoid: turns the ellipsoidal height a GNSS fix reports into height above sea level -->
+<script src="lib/geoid-egm96.js"></script>
 <!-- Leaflet Draw -->
 <script src="lib/leaflet-draw/Leaflet.draw.js"></script>
 <script src="lib/leaflet-draw/Leaflet.Draw.Event.js"></script>

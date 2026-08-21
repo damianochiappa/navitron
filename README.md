@@ -33,15 +33,53 @@ To update, just install the latest release over the existing one: the app update
 - **Catasto (Italy)** — preloaded and on by default: Land Registry Parcels and Sheets (WFS), parcel labels, Buildings (Catasto Fabbricati), water bodies and roads (Catasto Acque, Catasto Strade) and provincial boundaries (WMS), all from Agenzia delle Entrate INSPIRE. Add more layers of your own from the usual portals (PCN minambiente, IGM, Geoportale Nazionale, ArcGIS/ESRI) via "Add web map" — they're saved and restored on next launch
 - **Fiducial points (Italy)** — PFs are not preloaded. Where the regional authority publishes them via WFS (e.g. Piemonte) they can be added as a queryable layer; elsewhere, import a KML derived from the TAF, the fiducial point table published by Agenzia delle Entrate. Once loaded they're saved and restored on next launch
 - **Cadaster wizard (Italy)** — cascading dropdowns from region to sheet (foglio); optional parcel filter applied to the CadastralParcel layer, with automatic zoom and selection highlight
-- **Offline tile cache** — download any basemap within a KML boundary for offline use (Service Worker)
+- **Offline tile cache** — download a tiled basemap within a KML boundary for offline use (Service Worker). The few that do not qualify — a non-tiled WMS, ones needing credentials, ones whose provider forbids bulk copying — stay listed but disabled, with the reason shown; for the others a notice about the provider's terms appears first
 - **KML/KMZ/GeoJSON/GPX import** — layer management, vertex editing, attribute popup, dissolve polygons (turf.js), rename, export
 - **Coordinate tools** — go-to by DD/DMS/UTM/MGRS, format converter, bookmarks
 - **Maps** — OpenTopoMap, OpenStreetMap, ESRI (Satellite, Topo, NatGeo), Stadia Satellite, CartoDB; custom WMS/WMTS/ArcGIS layers with opacity control
-- **GPS** — real-time position, accuracy circle, UTM/MGRS coordinates, terrain elevation (Open-Meteo); flight mode auto-detection (AGL threshold)
+- **GPS** — real-time position, accuracy circle, UTM/MGRS coordinates, terrain elevation (Open-Meteo); GNSS altitude stated above sea level, via a bundled EGM96 geoid table
 - **Navigation** — OSRM routing (driving, cycling, walking); heading-up map rotation with direction arrow; off-route detection and automatic recalculation; speed/distance/ETA HUD; walking view cone
-- **Track recording** — GPS track with stats; elevation profile chart; export as GPX or KML
-- **Draw & measure** — markers, polylines, polygons, circles; polyline measurement; distance/area calculation on the WGS 84 ellipsoid
+- **Track recording** — GPS track with stats; export as GPX or KML
+- **Draw & measure** — markers, polylines, polygons, circles; polyline measurement; distances geodesic on the WGS 84 ellipsoid, areas on its authalic sphere (the one with the same surface area)
 - **ArcGIS Online** — token authentication for protected services
+
+---
+
+## What it does not do
+
+Worth saying before the install rather than after.
+
+- **It is not a road navigator.** The maps are raster and carry no vector road network: the app
+  draws the route and shows the direction, but gives no turn instructions and no voice guidance.
+- **The boundaries carry no legal value.** Cadastral mapping has an imprecision of its own, of the
+  order of a few metres, that no app can correct. It is enough to recognise a parcel, not to define
+  a property boundary: boundary determination, subdivision filings and any act with legal effect
+  remain the responsibility of a qualified surveyor, on official cadastral records and with an
+  instrumental survey.
+- **The area you read is not the surface on the visura.** The figure in the popup is measured off
+  the geometry the Agenzia delle Entrate publishes — hence "geometric area": it tells you how large
+  the shape on the map is, not what the land registry records. The official surface is the one on
+  the visura, and the two can differ.
+- **Several functions need a connection**, and they are the ones used most: cadastral lookup (the
+  data is read from the Agenzia's services at the moment of the request and no copy is kept), place
+  search, route calculation and recalculation, terrain elevation. Offline you keep the downloaded
+  maps, the saved layers, GPS, drawing, measuring and track recording.
+- **Offline download has limits, but few of them.** Most basemaps can be downloaded. What stays
+  out is a non-tiled WMS — which has no tiles to fetch — sources that need credentials, and those
+  whose provider forbids bulk copying: they appear in the list disabled, with the reason next to
+  them. For the rest the app shows a notice first, because tile providers' terms of use do set
+  limits on large downloads, and respecting them is the downloader's responsibility.
+- **Trentino-Alto Adige is not covered.** Trento and Bolzano run their own provincial cadastre (the
+  tavolare system), which the Agenzia delle Entrate services do not publish: which is why the two
+  provinces are absent from the cadaster wizard.
+
+---
+
+## Usage notes
+
+Navitron is a tool for field consultation and orientation, not a replacement for professional cadastral software.
+
+The app works without connectivity, but moving through remote or difficult terrain carries risks no tool removes: Navitron helps you orient yourself, it does not replace preparation, proper equipment and caution. Your safety on the ground remains your own responsibility.
 
 ---
 
@@ -94,16 +132,6 @@ Template:
   });
 })();
 ```
-
----
-
-## Usage notes
-
-Navitron is a tool for field consultation and orientation. The cadastral boundaries it displays come from the public INSPIRE services of the Agenzia delle Entrate and are accurate to within a few metres: they are suitable for locating and recognising a parcel, not for defining a property boundary. Boundary determination, subdivision filings and any act with legal effect remain the responsibility of a qualified surveyor, based on official cadastral records and an instrumental survey.
-
-The area the app reports for a parcel is measured off the geometry published by the Agenzia delle Entrate — hence "geometric area". It tells you how large the shape on the map is, not what the land registry records: the official surface is the one on the visura, and the two can differ.
-
-The app works without connectivity, but moving through remote or difficult terrain carries risks no tool removes: Navitron helps you orient yourself, it does not replace preparation, proper equipment and caution. Your safety on the ground remains your own responsibility.
 
 ---
 
