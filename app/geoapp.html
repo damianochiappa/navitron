@@ -901,19 +901,15 @@
           <div class="flight-unit">km/h</div>
         </div>
         <div class="flight-block">
-          <div class="flight-label">AGL</div>
-          <div class="flight-val" id="fp-agl">--</div>
-          <div class="flight-unit">m</div>
-        </div>
-        <div class="flight-block">
-          <div class="flight-label">ALT</div>
-          <div class="flight-val" id="fp-alt">--</div>
-          <div class="flight-unit">m WGS84</div>
-        </div>
-        <div class="flight-block">
           <div class="flight-label">HDG</div>
           <div class="flight-val" id="fp-hdg">--</div>
           <div class="flight-unit">deg</div>
+        </div>
+        <!-- Altitude at cruise is five digits: it takes the whole row, not half of it. -->
+        <div class="flight-block flight-wide">
+          <div class="flight-label">ASL</div>
+          <div class="flight-val" id="fp-alt">--</div>
+          <div class="flight-unit">m ASL</div>
         </div>
       </div>
     </div>
@@ -1026,7 +1022,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">2.3.3</span></div>
+      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">2.3.4</span></div>
       <div class="about-row"><span class="lbl">Author</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">License</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — Open Source</a></span></div>
       <div class="about-row"><span class="lbl">Engine</span><span class="val">Leaflet · Cordova · Android</span></div>

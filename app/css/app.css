@@ -1290,6 +1290,8 @@ a.polyline-measure-controlOnBgColor:hover {
   background: var(--border);
   border-top: 1px solid var(--border);
 }
+/* Altitude at cruise is five digits: it needs the full row, not a third of it. */
+.flight-wide { grid-column: 1 / -1; }
 .flight-block {
   background: var(--surface);
   padding: 10px 12px 9px;

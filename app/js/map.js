@@ -467,7 +467,7 @@ function gpsUpdate(pos) {
   gpsDiv.innerHTML =
     `<div><b>GPS</b> &mdash; Acc: &plusmn;${Math.round(acc)} m` +
     (spd != null ? ` &mdash; ${(spd*3.6).toFixed(1)} km/h` : '') + '</div>' +
-    (_showGnssAlt ? `<div><b style="color:var(--accent)">ALT&nbsp; </b>${altMsl.toFixed(0)} m <small style="opacity:0.6">(GPS, above sea level)</small></div>` : '') +
+    `<div class="gps-alt-row" style="display:${_showGnssAlt ? '' : 'none'}"><b style="color:var(--accent)">ALT&nbsp; </b>${altMsl != null ? altMsl.toFixed(0) : '--'} m <small style="opacity:0.6">(GPS, above sea level)</small></div>` +
     `<div><b style="color:var(--accent)">DD&nbsp;&nbsp; </b>${dd}</div>` +
     `<div><b style="color:var(--accent)">UTM&nbsp; </b>${utm}</div>` +
     `<div><b style="color:var(--accent)">MGRS </b>${mgrs}</div>` +
@@ -501,7 +501,9 @@ function gpsUpdate(pos) {
     const dir  = (hdg != null && isFinite(hdg)) ? ' ' + dirs[Math.round(hdg / 45) % 8] : '';
     const _setFp = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
     _setFp('fp-spd', spd != null && spd >= 0 ? Math.round(spd * 3.6) : '--');
-    _setFp('fp-agl', _agl != null ? Math.round(_agl) : '--');
+    /* Above sea level, not above ground: height above ground needs a terrain model, the model
+       needs the network, and in the one place this panel exists for there is none. The altitude
+       is the receiver's own, corrected by the geoid table on board — no staleness, no lookup. */
     _setFp('fp-alt', altMsl != null ? Math.round(altMsl) : '--');
     _setFp('fp-hdg', hdg != null && isFinite(hdg) ? Math.round(hdg) + dir : '--');
   }
@@ -539,16 +541,25 @@ function gpsUpdate(pos) {
   if (typeof fetchElevation === 'function') {
     fetchElevation(ll.lat, ll.lng).then(val => {
       if (val != null) _gpsTerrainElev = val;
-      /* Scoped to the div this fix built, never to whatever popup happens to be on screen.
-         With document.getElementById it patched the balloon the user had open — frozen from an
-         earlier fix — so the ELEV row advanced while the ALT row above it stood still, and the
-         two could contradict each other inside one popup. */
+      /* The elevation block is settled here, with the terrain this fix actually received, and
+         scoped to the div this fix built — never to whatever popup happens to be on screen,
+         which is how the ELEV row used to advance while the ALT row above it stood still.
+         Both directions were defects, and both were reported from the field: on the first fix
+         of a session no terrain is known, so the altitude is written and the arriving terrain
+         left two elevations side by side; and where a cached terrain had made the altitude row
+         stand down, a lookup that then failed offline left the balloon with no elevation at
+         all. One statement decides, once the answer is in. */
+      const _terrain = val;                       // null means: unknown for THIS fix
+      const _aglNow  = (altMsl != null && _terrain != null) ? (altMsl - _terrain) : null;
+      const _aglShow = _aglIsMeaningful(_aglNow, acc, altAcc);
       const el = gpsDiv.querySelector('.gps-elev');
-      /* The AGL suffix appears on the same terms as the ALT row above: only when the height
-         above ground is larger than the uncertainty of the two numbers it came from. */
-      if (el) el.textContent = val != null
-        ? val + ' m' + (_aglIsMeaningful(_agl, acc, altAcc) ? '  (AGL ' + Math.round(_agl) + ' m)' : '')
+      if (el) el.textContent = _terrain != null
+        ? _terrain + ' m' + (_aglShow ? '  (AGL ' + Math.round(_aglNow) + ' m)' : '')
         : '--';
+      /* Shown when it is the only elevation there is, or when it is genuinely above the ground.
+         Never alongside a terrain figure it merely disagrees with. */
+      const _altRow = gpsDiv.querySelector('.gps-alt-row');
+      if (_altRow) _altRow.style.display = (altMsl != null && (_terrain == null || _aglShow)) ? '' : 'none';
     });
   }
 
