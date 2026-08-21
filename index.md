@@ -88,6 +88,8 @@ Per contribuire e compilare dai sorgenti (build on-device con Termux + proot-dis
 
 Navitron è uno strumento di consultazione e orientamento sul terreno. I confini catastali che visualizza provengono dai servizi pubblici INSPIRE dell'Agenzia delle Entrate e hanno una precisione dell'ordine di alcuni metri: sono adatti a individuare e riconoscere una particella, non a definire un confine di proprietà. La determinazione dei confini, i tipi di frazionamento e ogni atto con rilevanza legale restano di competenza di un tecnico qualificato, sulla base della documentazione catastale ufficiale e di un rilievo strumentale.
 
+L'area che l'app riporta per una particella è calcolata sulla geometria pubblicata dall'Agenzia delle Entrate — per questo si chiama area geometrica. Dice quanto è estesa la forma disegnata sulla mappa, non quanto risulta al catasto: la superficie ufficiale è quella della visura, e le due possono differire.
+
 L'app funziona anche senza connessione, ma muoversi in aree isolate o impervie comporta rischi che nessuno strumento elimina: Navitron aiuta a orientarsi, non sostituisce preparazione, attrezzatura adeguata e prudenza. La responsabilità della propria sicurezza resta di chi si muove sul terreno.
 
 ---

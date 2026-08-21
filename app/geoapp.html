@@ -727,6 +727,7 @@
               <div class="guide-item"><span class="guide-key">Reset</span><span class="guide-desc">Resets the wizard result: deselects the parcels it highlighted and clears any active cadaster filter, returning the Catasto Particelle layer to its default (no filter, viewport-only fetch). After "Go to" the surrounding parcels are shown automatically, so this is what you use to drop the selection when done.</span></div>
               <div class="guide-item"><span class="guide-key">Existing filter</span><span class="guide-desc">If a manual WFS filter is already active on Catasto Particelle (set via the &#9661; button in the layer list), running the wizard replaces it &mdash; a toast warns you when this happens.</span></div>
               <div class="guide-item"><span class="guide-key">Fiducial pts</span><span class="guide-desc">PFs (punti fiduciali) are not preloaded. Where the regional authority publishes them via WFS &mdash; Piemonte does &mdash; add the service under "Add web map" and the points become a queryable layer like any other. Elsewhere, import a KML derived from the TAF, the fiducial point table published by Agenzia delle Entrate. Either way the layer is saved and restored on next launch. These points carry no legal value: a cadastral filing needs the official AdE monographs.</span></div>
+              <div class="guide-item"><span class="guide-key">Area vs visura</span><span class="guide-desc">The "Geometric area" in a parcel popup is measured off the geometry published by Agenzia delle Entrate: it is the size of the shape on the map, not the registered surface. The official figure is the one on the visura, and the two can differ. For any filing or deed, the visura is what counts.</span></div>
             </div>
 
           </div>
@@ -1026,7 +1027,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">2.2.9</span></div>
+      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">2.3.0</span></div>
       <div class="about-row"><span class="lbl">Author</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">License</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — Open Source</a></span></div>
       <div class="about-row"><span class="lbl">Engine</span><span class="val">Leaflet · Cordova · Android</span></div>

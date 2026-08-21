@@ -101,6 +101,8 @@ Template:
 
 Navitron is a tool for field consultation and orientation. The cadastral boundaries it displays come from the public INSPIRE services of the Agenzia delle Entrate and are accurate to within a few metres: they are suitable for locating and recognising a parcel, not for defining a property boundary. Boundary determination, subdivision filings and any act with legal effect remain the responsibility of a qualified surveyor, based on official cadastral records and an instrumental survey.
 
+The area the app reports for a parcel is measured off the geometry published by the Agenzia delle Entrate — hence "geometric area". It tells you how large the shape on the map is, not what the land registry records: the official surface is the one on the visura, and the two can differ.
+
 The app works without connectivity, but moving through remote or difficult terrain carries risks no tool removes: Navitron helps you orient yourself, it does not replace preparation, proper equipment and caution. Your safety on the ground remains your own responsibility.
 
 ---
