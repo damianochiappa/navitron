@@ -4,7 +4,7 @@ description: "App Android open source per il catasto italiano: interrogazione WF
 image: /catasto-particelle-wfs.png
 ---
 
-App Android **open source per il catasto italiano**, pensata per il lavoro sul campo: geometri, agronomi (PAC/AGEA), tecnici. Permette l'**interrogazione WFS delle particelle catastali dell'Agenzia delle Entrate** (dati INSPIRE), la **ricerca per comune, foglio e particella**, la **cache delle mappe per l'uso offline** l'**import di KML, KMZ, GeoJSON e GPX** e l'**export in KML, GeoJSON e GPX**. Distribuita come APK tramite Apache Cordova; costruita e testata interamente on-device con Termux + proot-distro.
+App Android **open source per il catasto italiano**, pensata per il lavoro sul campo: geometri, agronomi (PAC/AGEA), tecnici. Permette l'**interrogazione WFS delle particelle catastali dell'Agenzia delle Entrate** (dati INSPIRE), la **ricerca per comune, foglio e particella**, la **cache delle mappe per l'uso offline**, l'**import di KML, KMZ, GeoJSON e GPX** e l'**export in KML, GeoJSON e GPX**. Distribuita come APK tramite Apache Cordova; costruita e testata interamente on-device con Termux + proot-distro.
 
 <small><em>Open-source Android GIS app for the Italian cadastre — WFS parcel query (Agenzia delle Entrate / INSPIRE), search by municipality / sheet / parcel, offline tile cache, KML export.</em></small>
 
@@ -97,8 +97,9 @@ Vale la pena dirlo prima dell'installazione, non dopo.
 - **Diverse funzioni richiedono la connessione**, e sono proprio quelle che si usano di più: la
   consultazione del catasto (i dati arrivano dai servizi dell'Agenzia al momento della richiesta e
   non ne viene conservata copia), la ricerca dei luoghi, il calcolo e il ricalcolo dei percorsi, la
-  quota del terreno. Senza rete restano le mappe scaricate, i livelli salvati, il GPS, il disegno,
-  le misure e le tracce.
+  quota del terreno di un punto tenuto premuto sulla mappa. Senza rete restano le mappe scaricate,
+  i livelli salvati, il GPS con l'altitudine sul livello del mare (corretta a bordo con il geoide
+  EGM96), il disegno, le misure e le tracce.
 - **Il download offline ha dei limiti, ma sono pochi.** Quasi tutte le mappe di sfondo si
   scaricano. Restano fuori un WMS non a tile — che tile non ne ha — le sorgenti che richiedono
   credenziali e quelle il cui fornitore vieta la copia massiva: compaiono in elenco disattivate,

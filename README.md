@@ -62,8 +62,9 @@ Worth saying before the install rather than after.
   the visura, and the two can differ.
 - **Several functions need a connection**, and they are the ones used most: cadastral lookup (the
   data is read from the Agenzia's services at the moment of the request and no copy is kept), place
-  search, route calculation and recalculation, terrain elevation. Offline you keep the downloaded
-  maps, the saved layers, GPS, drawing, measuring and track recording.
+  search, route calculation and recalculation, the terrain elevation of a point you long-press.
+  Offline you keep the downloaded maps, the saved layers, GPS with its altitude above sea level
+  (corrected on board with the EGM96 geoid), drawing, measuring and track recording.
 - **Offline download has limits, but few of them.** Most basemaps can be downloaded. What stays
   out is a non-tiled WMS — which has no tiles to fetch — sources that need credentials, and those
   whose provider forbids bulk copying: they appear in the list disabled, with the reason next to
