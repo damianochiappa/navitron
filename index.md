@@ -70,7 +70,7 @@ Per aggiornare, installa la release più recente sopra quella esistente: l'app s
 - **Import KML/KMZ/GeoJSON/GPX** — gestione layer, editing dei vertici, popup degli attributi, dissolve dei poligoni (turf.js), rinomina, export
 - **Strumenti coordinate** — vai-a per DD/DMS/UTM/MGRS, convertitore di formato, segnaposti
 - **Mappe** — OpenTopoMap, OpenStreetMap, ESRI (Satellite, Topo, NatGeo), Stadia Satellite, CartoDB; layer WMS/WMTS/ArcGIS personalizzati con controllo opacità
-- **GPS** — posizione in tempo reale, cerchio di accuratezza, coordinate UTM/MGRS, quota del terreno (Open-Meteo)
+- **GPS** — posizione in tempo reale, cerchio di accuratezza, coordinate UTM/MGRS, quota sul livello del mare ricavata dalla tabella del geoide EGM96 a bordo (funziona anche senza rete); la quota del terreno di un punto si legge tenendolo premuto sulla mappa (Open-Meteo)
 - **Navigazione** — routing OSRM (auto, bici, a piedi); rotazione mappa heading-up con freccia di direzione; rilevamento fuori-rotta e ricalcolo automatico; HUD velocità/distanza/ETA; cono di visuale a piedi
 - **Registrazione tracce** — traccia GPS con statistiche; export in GPX o KML
 - **Disegno e misura** — marker, polilinee, poligoni, cerchi; misura polilinee; distanze geodetiche sull’ellissoide WGS 84, aree sulla sua sfera autalica (quella di pari superficie)

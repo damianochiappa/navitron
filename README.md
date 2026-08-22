@@ -37,7 +37,7 @@ To update, just install the latest release over the existing one: the app update
 - **KML/KMZ/GeoJSON/GPX import** — layer management, vertex editing, attribute popup, dissolve polygons (turf.js), rename, export
 - **Coordinate tools** — go-to by DD/DMS/UTM/MGRS, format converter, bookmarks
 - **Maps** — OpenTopoMap, OpenStreetMap, ESRI (Satellite, Topo, NatGeo), Stadia Satellite, CartoDB; custom WMS/WMTS/ArcGIS layers with opacity control
-- **GPS** — real-time position, accuracy circle, UTM/MGRS coordinates, terrain elevation (Open-Meteo); GNSS altitude stated above sea level, via a bundled EGM96 geoid table
+- **GPS** — real-time position, accuracy circle, UTM/MGRS coordinates, altitude above sea level from a bundled EGM96 geoid table (works with no network); terrain elevation for a point by long-pressing it on the map (Open-Meteo)
 - **Navigation** — OSRM routing (driving, cycling, walking); heading-up map rotation with direction arrow; off-route detection and automatic recalculation; speed/distance/ETA HUD; walking view cone
 - **Track recording** — GPS track with stats; export as GPX or KML
 - **Draw & measure** — markers, polylines, polygons, circles; polyline measurement; distances geodesic on the WGS 84 ellipsoid, areas on its authalic sphere (the one with the same surface area)

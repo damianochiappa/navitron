@@ -659,14 +659,13 @@ body:has(#kml-edit-bar:not(.hidden)) #toast     { bottom: calc(var(--lane-bottom
    Figures are the measured worst case (extreme coordinates, 11px font) rounded
    up. Over-reserving is safe: #sb-scroll scrolls horizontally. */
 #sb-lat, #sb-lon, #sb-dm, #sb-utm, #sb-mgrs,
-#sb-spd, #sb-elev, #sb-acc { display: inline-block; text-align: right; }
+#sb-spd, #sb-acc { display: inline-block; text-align: right; }
 #sb-lat  { min-width: 76px; }   /* -42.747000 */
 #sb-lon  { min-width: 80px; }   /* -116.094000 */
 #sb-dm   { min-width: 162px; }  /* 79°59.940'N 179°59.940'E */
 #sb-utm  { min-width: 126px; }  /* 33T 589536 4733300 */
 #sb-mgrs { min-width: 106px; }  /* 33TWH8953633300 */
 #sb-spd  { min-width: 58px; }
-#sb-elev { min-width: 44px; }
 #sb-acc  { min-width: 44px; }
 
 /* ===== MOBILE ===== */
