@@ -628,6 +628,9 @@
       if (typeof onDone === 'function') onDone();
     }; })();
     if (!parcelLayer) {
+      // Naming the way back matters here: the layer is missing because it was deleted, and
+      // until now nothing in the app told the user it could be brought back.
+      setStatus('The Catasto Particelle layer is missing: put it back from Map configuration \u203A Restore deleted defaults', true);
       if (typeof toastMsg === 'function') toastMsg('Catasto Particelle layer not configured', 'error', undefined, 'sidebar');
       _done(); return;
     }

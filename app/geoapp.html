@@ -361,6 +361,10 @@
               Import configuration
               <input type="file" id="cfg-file-input" accept=".json" style="display:none">
             </label>
+            <button class="btn btn-secondary btn-full" id="btn-cfg-restore" style="padding:6px 10px" title="Puts back the default layers and maps you deleted. Does not touch what you added yourself">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><polyline points="3 3 3 8 8 8"/></svg>
+              Restore deleted defaults
+            </button>
           </div>
         </div>
 
@@ -655,7 +659,7 @@
               <div class="guide-item"><span class="guide-key">Layer list</span><span class="guide-desc">Toggle visibility, adjust opacity, reorder by dragging the ⋮ grip on the left of the row, export or delete. Double-tap the layer name to rename it. The list order is the stacking order, with no restrictions: any layer can be dragged above or below any other, including a raster WMS over an imported file or over the cadastre. The order you set is remembered between launches. New layers start below the layers they would otherwise hide — a raster enters under the vectors, a line above the other lines — and you can move them from there. Buttons that do not apply are hidden: raster WMS overlays have no Zoom-to (no vector extent), and layers without an original file (WMS/WFS) have no Export.</span></div>
               <div class="guide-item"><span class="guide-key">Hollow ∅</span><span class="guide-desc">Tap the ∅ button on any loaded file layer to switch it to hollow mode — only the border is drawn, fill is transparent. Tap again to restore. Works on KML, GeoJSON and GPX polygon layers. Hollow state is saved and restored on next launch.</span></div>
               <div class="guide-item"><span class="guide-key">Edit KML ✏</span><span class="guide-desc">Tap the pencil icon on a KML layer to enter vertex edit mode — drag vertices to move them, double-tap a vertex to delete it, drag a dashed midpoint marker to add a new vertex. Save commits changes back to the layer and updates the stored KML. Cancel discards all edits.</span></div>
-              <div class="guide-item"><span class="guide-key">Map configuration</span><span class="guide-desc">"Export configuration" writes a JSON file with the web services you have added — WMS, WFS, WMTS/XYZ, ArcGIS — keeping layer name, CRS, filter, colour, opacity, visibility and stacking order, plus any SSL exceptions. Importing it restores them on another device or after a reinstall. <b>What it does not contain:</b> the files you imported (KML, KMZ, GeoJSON, GPX), your drawings, your bookmarks and the cached tiles. Those live elsewhere on the device and travel as files: export a file layer with the ⬇ button on its list entry, and your drawings from Drawing &rarr; "Export all". Downloaded offline basemaps do appear in the JSON, but as an entry only: the tiles are not in it, so on another device the area has to be downloaded again.</span></div>
+              <div class="guide-item"><span class="guide-key">Map configuration</span><span class="guide-desc">"Export configuration" writes a JSON file with the web services you have added — WMS, WFS, WMTS/XYZ, ArcGIS — keeping layer name, CRS, filter, colour, opacity, visibility and stacking order, plus any SSL exceptions. Importing it restores them on another device or after a reinstall. <b>What it does not contain:</b> the files you imported (KML, KMZ, GeoJSON, GPX), your drawings, your bookmarks and the cached tiles. Those live elsewhere on the device and travel as files: export a file layer with the ⬇ button on its list entry, and your drawings from Drawing &rarr; "Export all". Downloaded offline basemaps do appear in the JSON, but as an entry only: the tiles are not in it, so on another device the area has to be downloaded again. "Restore deleted defaults" puts back the stock layers and maps you removed — useful if you deleted a cadastral layer by mistake, because the search by sheet and parcel needs the Catasto Particelle layer to work. It does not touch what you added yourself, and the defaults you still have keep their colour, opacity, filter and position in the list.</span></div>
             </div>
 
             <div class="guide-section">
@@ -1021,7 +1025,7 @@
       </div>
     </div>
     <div>
-      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">2.3.7</span></div>
+      <div class="about-row"><span class="lbl">Version</span><span class="val" id="about-version">2.3.8</span></div>
       <div class="about-row"><span class="lbl">Author</span><span class="val">Damiano Chiappa</span></div>
       <div class="about-row"><span class="lbl">License</span><span class="val"><a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL v3 — Open Source</a></span></div>
       <div class="about-row"><span class="lbl">Engine</span><span class="val">Leaflet · Cordova · Android</span></div>
