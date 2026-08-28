@@ -28,6 +28,16 @@
      left/centre/right floaters share one baseline instead of picking corners by hand.
      Tune --copyright-band on device if the attribution bar is taller/shorter. */
   --copyright-band: 20px;
+  /* Clearance for the two bottom-left readout panels, which share the bottom lane with the
+     toasts and are far taller than the centre badges: the nav HUD measures 101 px on the
+     bench at 412×915 and the flight panel is within a few pixels of it. The figure is not
+     just the panel's height, and it is not the same number in the two apps: a toast is
+     position:fixed and counts from the bottom of the VIEWPORT, while the panels are
+     absolute inside #main, which stops above the status bar — so the same --lane-bottom
+     puts them at different heights, and --copyright-band differs between the apps on top of
+     that. Measured here, not derived: at 412×915 the HUD occupies y 617-718 and 152 px puts
+     the toast at y 571-606, clearing its top edge by 11 px. */
+  --hud-lane: 152px;
   --lane-bottom: calc(var(--status-h) + var(--copyright-band) + env(safe-area-inset-bottom, 0px) + 10px);
 }
 
@@ -577,6 +587,17 @@ html, body {
 body:has(#sel-badge:not(.hidden)) #toast,
 body:has(#nav-follow-badge:not(.hidden)) #toast { bottom: calc(var(--lane-bottom) + 48px); }
 body:has(#kml-edit-bar:not(.hidden)) #toast     { bottom: calc(var(--lane-bottom) + 96px); }
+/* The nav HUD and the flight panel are not centre badges — they are taller and they sit in
+   the same bottom lane on the left — but a toast lands on them all the same: the pill is
+   z-index 9999 over their 800 and, with white-space:nowrap on a phone, wide enough to reach
+   across. Measured on the bench at 412×915: HUD x 10-242 y 639-740, toast x 92-408 y 657-692
+   — the message sat inside the panel, over the distance and ETA readings. A warn or error
+   toast is a translucent coloured pill with a blur and a two-shot glow animation, so read
+   off the panel underneath it is the panel changing colour and turning to frosted glass.
+   Last of the lane rules on purpose: both panels are taller than any badge, so when one is
+   up its clearance is the one that has to win. */
+body:has(#nav-hud:not(.hidden)) #toast,
+body:has(#flight-panel:not(.hidden)) #toast     { bottom: calc(var(--lane-bottom) + var(--hud-lane)); }
 
 /* Boost popup/tooltip pane z-index — leaflet-rotate per-pane transforms create stacking
    contexts that ignore z-index between siblings; DOM order + high z-index as double safety */
