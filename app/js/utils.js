@@ -132,6 +132,9 @@ const _TOAST_LAST = new Map();
 // Cap on concurrent toasts per non-sidebar host: keeps the map viewport uncluttered when
 // several layers speak at once. Errors are exempt (never dropped by cap).
 const _TOAST_MAP_CAP = 2;
+// How long a message stays "just gone", during which an identical one is not re-shown.
+const _TOAST_REAPPEAR_MS = 2500;
+const _TOAST_GONE = new Map();
 
 function toastMsg(msg, type='', dur, target='map') {
   if (dur === undefined) dur = type === 'error' ? 4000 : type === 'warn' ? 3500 : 2500;
@@ -159,16 +162,45 @@ function toastMsg(msg, type='', dur, target='map') {
     if (el._removeTid) clearTimeout(el._removeTid);
     el._dismissTid = setTimeout(() => {
       el.classList.remove('show');
-      el._removeTid = setTimeout(() => { if (el.parentNode === host) host.removeChild(el); }, 320);
+      el._removeTid = setTimeout(() => {
+        if (el.parentNode === host) host.removeChild(el);
+        _TOAST_GONE.set(el.textContent, Date.now());   // see the re-appearance guard below
+      }, 320);
     }, dur);
   };
-  // Dedup: identical visible toast → reset its timer, no stacking.
-  const existing = Array.from(host.children).find(c => c.textContent === fullText);
-  if (existing) { _schedule(existing); return; }
+  /* Purely about how it LOOKS: the same message coming back within a second of having faded out
+     is a flicker, not information. The dedupe above only merges toasts that are on screen at the
+     same moment, and the cooldown key is (target, type, first 40 chars) — so a text whose count
+     changes ("2 layers" then "3 layers") mints a new key and gets straight through. This is
+     narrower and blunter on purpose: EXACTLY the same text, within _TOAST_REAPPEAR_MS of its own
+     disappearance, is dropped. It cannot hide anything new, because new information reads
+     differently. Applies to errors too — an error blinking at the user is no more readable than
+     a warning doing it. */
+  const _goneAt = _TOAST_GONE.get(fullText);
+  if (_goneAt && Date.now() - _goneAt < _TOAST_REAPPEAR_MS) return;
+  // Dedup: identical visible toast → reset its timer, no stacking. A toast already fading out
+  // is not a candidate: reviving it would make it jump back to full opacity mid-fade.
+  const existing = Array.from(host.children).find(c => c.textContent === fullText && !c._leaving);
+  if (existing) { existing.classList.add('show'); _schedule(existing); return; }
   // Rate-limit by (target, type, msg-prefix): similar-but-not-identical toasts (different
   // layer names, different counts) within cooldown are dropped silently. Errors bypass.
   if (type !== 'error') {
-    const cdKey = target + '\u0000' + type + '\u0000' + fullText.slice(0, 40);
+    /* On the map lane the numbers in a message are the part that CHANGES while everything else
+       stays the same — "2 layers: no features…" then "3 layers: no features…" — so keying on the
+       raw text mints a new key each time and every variant gets through. Reported from the field
+       as duplicate toasts piling up during rotation, where the count of empty layers moves
+       constantly. Collapsing digit runs makes those one key, which is what the user sees anyway.
+       Only this lane: elsewhere the number IS the message ("imported 3 shapes"), and two
+       different counts are two different pieces of news. */
+    /* On the map lane, what VARIES between two otherwise identical notices is the layer name and
+       the count — "Protected sites: no features…" then "WaterCourse: no features…" — so keying on
+       the raw text lets every variant through, and does so most often under load, when replies
+       arrive far enough apart to be reported one layer at a time. Both are collapsed here.
+       Elsewhere the name and the number ARE the message ("imported 3 shapes") and are kept. */
+    const cdText = target === 'map-quiet'
+      ? fullText.replace(/"[^"]*"/g, '"#"').replace(/\d+/g, '#')
+      : fullText;
+    const cdKey = target + '\u0000' + type + '\u0000' + cdText.slice(0, 40);
     const now = Date.now();
     const last = _TOAST_LAST.get(cdKey) || 0;
     const cd = _TOAST_COOLDOWN_MS[type] != null ? _TOAST_COOLDOWN_MS[type] : 4000;
@@ -179,16 +211,38 @@ function toastMsg(msg, type='', dur, target='map') {
     if (_TOAST_LAST.size > 32) {
       const purgeBefore = now - 48000;
       _TOAST_LAST.forEach((t, k) => { if (t < purgeBefore) _TOAST_LAST.delete(k); });
+      _TOAST_GONE.forEach((t, k) => { if (t < purgeBefore) _TOAST_GONE.delete(k); });
     }
   }
-  // FIFO cap on the map container: drop the oldest non-error toast when at capacity.
+  /* FIFO cap on the map container. Evicting used to removeChild the victim OUTRIGHT — no
+     dismissal, no fade — so a toast vanished mid-life at the instant the next one appeared in
+     its place. That snap is what reads as a flash when several layers speak in a row, and it
+     was measured before the collectors existed: 5 inserted, 3 torn out, 2 left standing.
+     Now the victim is dismissed exactly the way it would have dismissed itself, through the
+     .28s opacity/transform transition it already has, and a toast on its way out no longer
+     counts against the cap so it cannot be evicted a second time.
+     Errors are still preferred as survivors — they are the ones worth reading — but they are no
+     longer exempt from the cap altogether: unbounded errors stacking on top of each other is
+     the overlap itself, and since a burst of them now collapses to one toast upstream, the
+     exemption bought clutter rather than safety. */
   if (target !== 'sidebar') {
-    const nonError = Array.from(host.children).filter(c => !c.classList.contains('error'));
-    while (nonError.length >= _TOAST_MAP_CAP) {
-      const victim = nonError.shift();
+    const live = Array.from(host.children).filter(c => !c._leaving);
+    while (live.length >= _TOAST_MAP_CAP) {
+      let idx = live.findIndex(c => !c.classList.contains('error'));
+      if (idx === -1) idx = 0;
+      const victim = live.splice(idx, 1)[0];
       if (victim._dismissTid) clearTimeout(victim._dismissTid);
       if (victim._removeTid) clearTimeout(victim._removeTid);
-      if (victim.parentNode === host) host.removeChild(victim);
+      victim._leaving = true;
+      victim.classList.remove('show');
+      victim._removeTid = setTimeout(() => {
+        if (victim.parentNode === host) host.removeChild(victim);
+        /* Record it here too, not only on natural expiry: the re-appearance guard reads this map,
+           and a toast pushed out by the cap used to leave NO trace — so an identical message could
+           come straight back. That is exactly the rotation case, where the cap is the busy path,
+           which is why the guard looked like it "did not always work". */
+        _TOAST_GONE.set(victim.textContent, Date.now());
+      }, 320);
     }
   }
   const item = document.createElement('div');

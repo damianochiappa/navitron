@@ -139,10 +139,127 @@ L.control.scale({ maxWidth: 200, metric: true, imperial: false, position: 'botto
    seconds; anything still wrong resurfaces normally on the next pan/zoom. */
 const _BOOT_QUIET_MS = 7000;
 const _bootAt = Date.now();
+/* Nothing from the layers speaks while the map is turning, or in the moment right after.
+   Rotation does not raise these messages by itself — a gesture ends with a small pan, every
+   layer refreshes, and the ones with no data here answer empty together. But that burst lands
+   on a main thread that is still busy, so the timers that dismiss the toasts bunch up and
+   discharge at once, and the result is the flicker reported from the field. Without rotation the
+   very same machinery behaves, which is what says the toasts are a SYMPTOM here and not a cause.
+   So they are dropped, not queued: they describe a transient state that has already moved on by
+   the time the gesture ends, and replaying them late would be worse than silence.
+   The window has to outlast the refresh the gesture triggers, not just the gesture: moveend, the
+   400 ms fetch debounce, then the network. 2 s covers the common case; a slow reply still gets
+   through, which is a safe way to degrade. It is a latency choice, not a measured quantity.
+   ⚠ Failures are not lost: every caller writes its own console.warn, so the diagnostic report
+   still records them even when nothing is shown. */
+const _ROT_TOAST_QUIET_MS = 2000;
+let _rotLastRotateAt = 0;
+
 function _loadToast(msg, type, dur, target) {
+  if (Date.now() - _rotLastRotateAt < _ROT_TOAST_QUIET_MS) return;
   if (Date.now() - _bootAt < _BOOT_QUIET_MS) return;
   toastMsg(msg, type, dur, target);
 }
+
+/* ONE collector, four callers — the empty view, the failed request, the below-scale notice and
+   the WMS failure. They are the same situation wearing four coats: a message that NAMES a layer,
+   raised by several layers at once because one viewport change reaches all of them. And they
+   share one failure: a different name means a different text, which defeats toastMsg's
+   identical-text dedupe AND its (target, type, first 40 chars) cooldown key, so every layer gets
+   through — and the FIFO cap of two then tears the older ones out the instant the next arrives,
+   with no fade. Measured with the five layers from the field report: 5 inserted, 3 torn out,
+   2 left standing. Collected, the same burst is one toast.
+   ⚠ Deliberately ONE mechanism with four renderings, not four copies of the same window: the
+   first two were written separately and the other two were then left behind for days, which is
+   exactly how four copies drift apart.
+   The per-layer throttles (8 s on the empty view, 5 s on the below-scale notice) stay upstream
+   where they already were: they are what stops the COUNT changing on every pan, which would mint
+   a new cooldown key each time and walk straight past the rate limit this leans on.
+   The window is a UI-latency choice, not a measured quantity — the layers are scheduled by one
+   moveend so their requests leave together, but their replies arrive a network round trip apart
+   and that spread cannot be measured from here. It degrades safely: a reply that misses the
+   window opens the next one, so the worst case is two toasts rather than five. */
+const _BURST_MS = 1200;
+
+/* These messages describe a STATE, not an event: "no features here" stays true until the user
+   moves, and "below this scale" until they zoom. A state is worth saying when it CHANGES —
+   saying it again every cooldown, for as long as it holds, is what the field reported as
+   "troppi e ripetuti". toastMsg's dedupe only merges toasts visible at the same moment, and its
+   cooldown just delays the repeat by 8 s; neither stops a message recurring for ever while
+   nothing about the situation has changed. So the collector remembers what it last said and
+   stays quiet until the answer is different.
+   Two escapes keep the silence from becoming a hole: `reset()`, called when the condition
+   actually clears (features come back, the zoom rises above the layer's minimum), so the same
+   message can be said again for a NEW occurrence; and _SAY_AGAIN_MS, after which it may repeat
+   anyway — a user coming back to the same spot ten minutes later has forgotten being told. */
+/* ⚠ NO reset() calls anywhere. An earlier version cleared the memo whenever the condition
+   "ended" — features came back, the zoom rose above a layer's minimum — so that a new occurrence
+   would be heard rather than swallowed as a repeat. It backfired badly and was reported from the
+   device as the same toast firing many times in a fraction of a second: the resets were GLOBAL
+   and fired constantly. With eleven layers at different minZooms there is always one above its
+   threshold, so `_reportBelowScale.reset()` in _update wiped the memo on essentially every
+   update; and one layer answering with features re-armed the empty message for all the others.
+   The message then became formally "new" many times a second, and no downstream rate limit could
+   catch it, because none of them was wrong.
+   What remains is enough and is predictable: the text itself is the memo, so the message speaks
+   again as soon as the ANSWER changes (a different count, a different layer), and _SAY_AGAIN_MS
+   lets it be heard again after a minute for a genuinely new visit. */
+const _SAY_AGAIN_MS = 60000;
+
+function _makeBurstToast(render, type, target, kind) {
+  let names = [], first = '', tid = null, lastKind = '', lastAt = 0;
+  const fn = (name, msg) => {
+    if (names.indexOf(name) === -1) {
+      names.push(name);
+      if (!first) first = msg || '';   // the lone case keeps the first layer's own words
+    }
+    if (tid) return;
+    tid = setTimeout(() => {
+      tid = null;
+      const list = names, f = first;
+      names = []; first = '';
+      if (!list.length) return;
+      const text = render(list, f);
+      const now = Date.now();
+      /* Keyed on the KIND of message, not on its text, and that distinction is the whole point.
+         When a burst holds a single layer the rendered string carries that layer's NAME, so three
+         layers answering in three separate windows produce three DIFFERENT strings — which opens
+         every text-keyed gate at once: this memo, toastMsg's cooldown and its re-appearance
+         buffer. And it gets worse exactly when it matters: under load the replies arrive further
+         apart, fall into different windows, and are therefore reported one by one rather than
+         collected. The harder the app is working, the blinder the text-based gates become.
+         Reported from the device as redundant toasts surviving "a thousand gates". */
+      /* Only where repetition is the defect. A status message describes a STATE — "there is
+         nothing here", "you are too far out" — and saying it again while it still holds is noise.
+         A failure is an EVENT: every new episode has to speak, or the latch upstream turns into a
+         mute button. So the error collector passes no kind and is never held back here; it is
+         rationed by _errShown, one report per layer per episode, which is the right unit for it. */
+      if (kind && kind === lastKind && now - lastAt < _SAY_AGAIN_MS) return;
+      if (kind) { lastKind = kind; lastAt = now; }
+      _loadToast(text, type, undefined, target);
+    }, _BURST_MS);
+  };
+  return fn;
+}
+
+// A single layer keeps its name: that is worth knowing, and on its own it cannot flash.
+const _reportWfsEmpty = _makeBurstToast(
+  n => n.length === 1 ? n[0] + ': no features in current view' : n.length + ' layers: no features in current view',
+  'warn', 'map-quiet', 'wfs-empty');
+
+/* A lone failure keeps its WHOLE message, the server's own words included: that is the case the
+   user can act on. Collected, the detail is not lost but moves to the log — every caller writes
+   its own console.warn, per layer and unabridged, so the diagnostic report reads as before. */
+const _reportLayerError = _makeBurstToast(
+  (n, f) => n.length === 1 ? f : n.length + ' layers: request failed',
+  'error', undefined, null);   // no kind: every failure EPISODE speaks, see above
+
+/* Below the scale a layer declares, nothing is drawn and nothing is wrong — but with eleven
+   layers configured at different minZooms a single zoom level can put several of them out of
+   range at once, and each used to say so in its own words. */
+const _reportBelowScale = _makeBurstToast(
+  n => n.length === 1 ? 'Zoom in to load ' + n[0] : 'Zoom in to load ' + n.length + ' layers',
+  'warn', 'map-quiet', 'below-scale');
 
 /* Landscape-only collapsible headers for Draw (topleft) and Measure (topright).
    Hidden in portrait via CSS; in landscape they toggle the corresponding stack. */
@@ -518,7 +635,15 @@ function gpsUpdate(pos) {
     gpsMarker = (_kind === 'dot')
       ? L.circleMarker(ll, { radius: 8, color: '#4f8ef7', fillColor: '#fff', fillOpacity: 1, weight: 3 })
       : L.marker(ll, { icon: _icon(), zIndexOffset: 1000 });
-    gpsMarker.addTo(map).bindPopup(gpsDiv, { maxWidth: 260 });
+    /* autoPan off, for the same reason as the WFS and drawing popups. This balloon is anchored
+       to a marker that moves at every fix: Leaflet has an open popup follow its source, and the
+       follow calls _adjustPan, which stops the running pan animation and slides the map until
+       the balloon fits. Each of those slides is a moveend, and moveend is what every WMS and
+       WFS layer refreshes on — so a popup left open over a live position redrew the whole map
+       at fix rate. Turning while it was open kept re-triggering it, because rotation keeps
+       changing where the balloon sits on screen. The cost is the usual one: a popup opened near
+       the edge no longer slides into view. */
+    gpsMarker.addTo(map).bindPopup(gpsDiv, { maxWidth: 260, autoPan: false });
     _gpsMarkerKind = _kind;
   }
   /* The readout is refreshed only while the balloon is shut. Swapping the content of an open
@@ -615,7 +740,7 @@ function gpsUpdate(pos) {
         }
         // leaflet-rotate setBearing applies CSS rotate(+theta) clockwise.
         // Track-up (heading at top of screen) requires CCW rotation, so negate.
-        map.setBearing(-_smoothBearing);
+        _setBearingIfVisible(-_smoothBearing);
       }
     }
     // stopped → do nothing: the map keeps its last bearing (no random spin)
@@ -644,11 +769,21 @@ function gpsUpdate(pos) {
       pts.push(c);
       return pts;
     })(ll, _smoothBearing, 35, 45, 12);
-    if (_gpsViewCone) map.removeLayer(_gpsViewCone);
-    _gpsViewCone = L.polygon(_sectorPts, {
-      color: '#4f8ef7', weight: 1, opacity: 0.7,
-      fillColor: '#4f8ef7', fillOpacity: 0.18
-    }).addTo(map);
+    /* Reshape in place instead of destroying and recreating. Rebuilding removed what was ON
+       SCREEN and only then added the replacement — once per fix, in the overlay pane, beside
+       every other vector on the map. Same mistake _dropNext was written to fix on the WMS
+       double buffer, and the marker and accuracy circle just above already avoid it by moving
+       in place. Safe to reuse: the only other place that removes the cone nulls it as well, so
+       a non-null _gpsViewCone is always still on the map, and setLatLngs takes the same flat
+       ring the constructor was given, keeping style and pane untouched. */
+    if (_gpsViewCone) {
+      _gpsViewCone.setLatLngs(_sectorPts);
+    } else {
+      _gpsViewCone = L.polygon(_sectorPts, {
+        color: '#4f8ef7', weight: 1, opacity: 0.7,
+        fillColor: '#4f8ef7', fillOpacity: 0.18
+      }).addTo(map);
+    }
   } else {
     if (_gpsViewCone) { map.removeLayer(_gpsViewCone); _gpsViewCone = null; }
   }
@@ -821,9 +956,33 @@ function _saveView() {
   try { localStorage.setItem('navitron_view', JSON.stringify({ lat: c.lat, lng: c.lng, zoom: map.getZoom(), bearing: map.getBearing() })); } catch(_) {}
 }
 
+/* Debounced exactly the way _WMSImageLayer._schedule debounces a refresh, and for the same
+   reason. leaflet-rotate has no 'rotateend': the two-finger gesture calls setBearing once per
+   touch frame and setBearing fires 'rotate' unconditionally, so one turn used to write the view
+   tens of times — and each write is a synchronous JSON.stringify plus a localStorage.setItem on
+   the main thread, while the map itself turns on the compositor. Measured on this bench with a
+   real clock: 0.338 ms per rotation frame with the write against 0.051 ms without it.
+   Nothing reads the saved view during a gesture; only the next cold start does, so the last
+   write was always the only one that mattered.
+   Losing it on a kill is not a risk: visibilitychange, pagehide and pause call _saveView
+   directly and unthrottled, so the pending write is flushed by whichever of those fires. */
+let _saveViewTid = null;
+function _saveViewSoon() {
+  clearTimeout(_saveViewTid);
+  _saveViewTid = setTimeout(_saveView, 300);
+}
+
+/* Looked up on first use rather than at parse time: the element happens to precede this
+   script today, and a reordering of the page must not silently stop the readout. */
+let _zoomLevelEl = null;
+
 map.on('moveend zoomend rotate', () => {
-  _saveView();
-  document.getElementById('zoom-level').textContent = map.getZoom();
+  _saveViewSoon();
+  /* A rotation cannot change the zoom, so this used to rewrite the same string once per frame.
+     Same question _FOLLOW_MIN_PX asks of a pan: does the screen actually change? */
+  if (!_zoomLevelEl) _zoomLevelEl = document.getElementById('zoom-level');
+  const z = String(map.getZoom());
+  if (_zoomLevelEl && _zoomLevelEl.textContent !== z) _zoomLevelEl.textContent = z;
 });
 
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') _saveView(); });
@@ -942,10 +1101,47 @@ map.on('contextmenu', e => {
   const grip  = panel ? panel.querySelector('.flight-drag-header') : null;
   if (!panel || !grip) return;
 
+  /* --hud-lane is how far the toast has to rise to clear this panel. It was a measured constant
+     (152 px here, 112 in the sibling app) \u2014 a snapshot of a height that is not fixed: the panel
+     declares no height, it grows with the Android font scale, and collapsing it hides the whole
+     grid. Collapsed, the toast still floated the full lane. So read the height the browser has
+     already computed rather than remembering one screen's answer; it then tracks the panel in
+     every state, at every font size, on every device, and the two apps stop needing two numbers.
+     The 10 px is the same gap --lane-bottom already puts between stacked things, not a new
+     measurement. The literal in the CSS stays as the fallback for a browser without
+     ResizeObserver, and for the case where this block throws. */
+  const _setHudLane = () => {
+    try {
+      const h = panel.offsetHeight;
+      if (h > 0) document.documentElement.style.setProperty('--hud-lane', (h + 10) + 'px');
+    } catch (_) {}
+  };
+  /* Two observers, because the height changes for two different reasons and each misses the
+     other's. ResizeObserver catches the content growing — a larger system font, a longer
+     readout. MutationObserver on the class catches the panel being shown, hidden or collapsed,
+     which is done from several places in this file and would otherwise have to be hooked at
+     each of them; it also fires as a microtask, so the new height is already laid out when it
+     is read, whereas waiting for the resize callback leaves the lane briefly stale. */
+  /* Both observers are HELD in variables on purpose. An observer whose only target is
+     display:none has no active observation, so nothing keeps an unreferenced one alive and it
+     can be collected before the panel is ever shown — measured on the bench: written as
+     `new ResizeObserver(cb).observe(panel)` it never fired once, while the same construct on an
+     already-visible element fired normally. */
+  let _hudRO = null, _hudMO = null;
+  if (window.ResizeObserver) {
+    try { _hudRO = new ResizeObserver(_setHudLane); _hudRO.observe(panel); } catch (_) {}
+  }
+  if (window.MutationObserver) {
+    try { _hudMO = new MutationObserver(_setHudLane);
+          _hudMO.observe(panel, { attributes: true, attributeFilter: ['class'] }); } catch (_) {}
+  }
+  _setHudLane();
+
   const _fpCol = document.getElementById('flight-collapse');
   if (_fpCol) _fpCol.addEventListener('click', () => {
     panel.classList.toggle('collapsed');
     _fpCol.textContent = panel.classList.contains('collapsed') ? '+' : '\u2212';
+    _setHudLane();   // collapsing removes the grid; the lane must follow it down
   });
 
   let dragging = false, startX, startY, origLeft, origTop;
@@ -1086,16 +1282,22 @@ const _WMSImageLayer = L.Layer.extend({
       if (rotatePane) rotatePane.appendChild(p);
     }
     _reorderMapPanes(map);
-    map.on('moveend zoomend resize', this._schedule, this);
+    /* moveend goes through the coverage guard below; zoomend and resize do not, because a
+       zoom changes the resolution the image was asked at and a resize changes the screen it
+       has to cover, so both always need a fresh one. */
+    map.on('moveend', this._onViewChange, this);
+    map.on('zoomend resize', this._schedule, this);
     map.on('rotate', this._onRotate, this);
     this._schedule();
   },
 
   onRemove(map) {
     clearTimeout(this._timer);
-    map.off('moveend zoomend resize', this._schedule, this);
+    map.off('moveend', this._onViewChange, this);
+    map.off('zoomend resize', this._schedule, this);
     map.off('rotate', this._onRotate, this);
     this._fetchedBounds = null;
+    this._fetchedZoom   = null;
     this._removeOverlay();
   },
 
@@ -1145,13 +1347,32 @@ const _WMSImageLayer = L.Layer.extend({
      north-up request above is still the one on screen — and the image it asks for is the
      bearing-independent square, which no later turn can uncover. It closes the same gap for
      the two-finger rotate gesture, which never fired moveend either. */
-  _onRotate() {
+  /* Is the image already on screen still good enough? Only if it was asked for at this zoom
+     and the four corners of the screen all fall inside the area it covers. */
+  _covered() {
     const b = this._fetchedBounds;
-    if (!b || !this._map) return;
-    const map = this._map, s = map.getSize();
-    const covered = [[0, 0], [s.x, 0], [s.x, s.y], [0, s.y]]
+    if (!b || !this._map) return false;
+    const map = this._map;
+    if (this._fetchedZoom !== map.getZoom()) return false;
+    const s = map.getSize();
+    return [[0, 0], [s.x, 0], [s.x, s.y], [0, s.y]]
       .every(p => b.contains(map.containerPointToLatLng(p)));
-    if (!covered) this._schedule();
+  },
+
+  _onRotate() {
+    if (this._fetchedBounds && !this._covered()) this._schedule();
+  },
+
+  /* The same question, asked on moveend, where it never used to be asked at all. A rotated map
+     is holding the circumscribed square — 2.67x the screen — fetched precisely so that turning
+     cannot uncover it; and then a few pixels of finger drift at the end of a two-finger gesture
+     threw that away and made every layer fetch again and repaint. Measured on the bench: a pure
+     45 degree turn costs nothing, while the same turn followed by 18x12 px of drift refetched
+     all five WMS layers and rebuilt four image overlays.
+     At bearing 0 the fetched bounds ARE the screen, so any pan uncovers them and this behaves
+     exactly as it did before: the north-up browsing case pays nothing and changes nothing. */
+  _onViewChange() {
+    if (!this._covered()) this._schedule();
   },
 
   /* The pixel size to ask the image at. On a north-up map this is the screen and the request
@@ -1232,7 +1453,7 @@ const _WMSImageLayer = L.Layer.extend({
       const now = Date.now();
       if (!this._lastZoomWarn || now - this._lastZoomWarn > 5000) {
         const who = this.options.attribution ? '"' + this.options.attribution + '"' : 'WMS layer';
-        _loadToast('Zoom in to load ' + who, 'warn', undefined, 'map-quiet');
+        _reportBelowScale(who);
         this._lastZoomWarn = now;
       }
       return;
@@ -1242,6 +1463,7 @@ const _WMSImageLayer = L.Layer.extend({
        screen against. Recorded when the request is issued, not when it lands, so a turn
        during a slow fetch does not queue a second one for the same view. */
     this._fetchedBounds = bounds;
+    this._fetchedZoom   = map.getZoom();
     const url   = this._buildUrl(bounds, size);
     const _show = imgUrl => {
       // A response that lost the race must still release its object URL, otherwise the
@@ -1293,7 +1515,7 @@ const _WMSImageLayer = L.Layer.extend({
       if (reqId !== this._reqId || this._errShown) return;
       this._errShown = true;
       const who = this.options.attribution ? '"' + this.options.attribution + '"' : 'layer';
-      _loadToast('WMS ' + who + ' — ' + detail, 'error');
+      _reportLayerError(who, 'WMS ' + who + ' — ' + detail);
       // Also record it: the toast is gone in seconds, the diagnostic report is
       // what survives long enough to be looked at afterwards.
       console.warn('[navitron] WMS ' + who + ' failed:', detail, '|', this._wmsUrl);
@@ -1373,6 +1595,102 @@ let _selMode   = false;         // click-to-select mode active
 let _selTarget = null;          // typeName of WFS layer currently targeted (null = any)
 let _wfsCount  = 0;             // active WFS layers on map
 const _wfsRegistry = [];        // {typeName, name, layer} for each active WFS
+
+/* Vector geometry is not re-projected while the map is being turned BY HAND.
+   The overlay SVG stores screen pixels, not coordinates, so a new bearing invalidates every
+   path: measured on the bench with 120 polygons over a 40-frame gesture, the renderer rewrites
+   the `d` of EVERY path on EVERY frame — 4800 attribute writes, against 28 on the WMS images
+   in the same gesture. That is the work that leaves the layer above the map lagging behind the
+   tiles, which move on the compositor; it looks like everything flickering at once.
+   Detaching the rendered features for the duration takes it to 0 during the gesture and costs
+   240 node operations once (120 removals, 120 creations) instead of 4800 spread over frames.
+   ⚠ Hiding the pane in CSS does NOT work, and this was measured rather than assumed: Leaflet
+   does not know the pane is hidden and keeps rewriting every path — identical 4800. It saves
+   the paint, not the work.
+
+   Triggered on the RATE of rotate events, not on an angle. leaflet-rotate has no rotateend and
+   fires 'rotate' unconditionally from setBearing, so one event means two very different things:
+   a two-finger gesture produces roughly one per frame, track-up navigation roughly one per GPS
+   fix. Those regimes are a factor of fifty apart. An angle cannot separate them — a slow bend
+   in navigation crosses any sensible threshold, and that is exactly when the cadastre must stay
+   on screen.
+
+   Only the WFS features are detached. The WMS overlays stay: they are moved by the pane
+   transform and cost almost nothing, and dropping them would empty the map precisely while the
+   user is orienting. The GPS marker and accuracy circle stay for the same reason.
+   ⚠ The rendered `_geo` is detached, never the `_WFSLayer` itself: removing the layer would run
+   its onRemove, clear `_fetchedBounds` and make the restore issue a fresh request — one refetch
+   per turn, which is the defect the coverage guard exists to prevent. */
+
+/* The follow pan asks whether the screen actually changes (_FOLLOW_MIN_PX); the bearing never
+   did — setBearing was called on every fix, unguarded, while the pan beside it was gated. And
+   the smoother is exponential (0.55), so it approaches the true course without ever reaching it:
+   a slightly different value every fix, for ever, on top of the degree or two a real GPS course
+   wobbles by.
+   Same question as the pan, in the same units: how far does the farthest point on screen move?
+   At radius r (half the diagonal) a change of d degrees moves it r*d*PI/180 pixels. Below one
+   pixel nothing can change on screen, so this is not a trade-off — it removes work that has no
+   effect. It sits upstream of the rotation freeze and is still worth having: a call skipped here
+   also skips the rotate event, the view save it schedules and the coverage check every WMS layer
+   runs on it.
+   ⚠ Compared against map.getBearing(), i.e. what is ACTUALLY on screen, never against the
+   previous target. Against the previous target a slow drift of a tenth of a degree per fix would
+   stay under the threshold for ever and the map would silently accumulate error; against the
+   applied bearing the drift adds up and is applied as soon as it becomes visible. It is also
+   immune to bearing changes coming from elsewhere — the compass reset, a two-finger gesture. */
+const _BEARING_MIN_PX = 1;
+
+function _setBearingIfVisible(b) {
+  if (typeof map.getBearing !== 'function') { map.setBearing(b); return; }
+  const s = map.getSize();
+  const r = Math.sqrt(s.x * s.x + s.y * s.y) / 2;
+  const d = Math.abs(((b - map.getBearing() + 540) % 360) - 180);
+  if (r * d * Math.PI / 180 < _BEARING_MIN_PX) return;
+  map.setBearing(b);
+}
+
+/* MEASURED, and it is the whole point: a bearing change never needs the geometry re-projected.
+   The overlay pane sits inside the rotate pane, so the pane's own transform already turns every
+   path — and the browser routes pointer events through that transform too. Probe of 31/08: with
+   the `d` rewriting blocked, a polygon at bearing 45 lands on exactly the same screen pixels as
+   with it active (0x0 over 20 blocked writes), a tap still reaches the layer's click handler, and
+   a point outside the rotated shape still misses it.
+   So the writes triggered BY THE ROTATION are skipped and nothing else is touched: the features
+   stay on screen, rotating with the pane, and the per-frame DOM cost disappears. A pan or a zoom
+   change the projection for real and still write as they always did — the freeze is only up
+   during the synchronous work of the rotate event itself.
+
+   Two earlier designs, both worse, kept here so they are not tried again:
+   - detaching the layers for the duration of the gesture. It worked, but made the cadastre
+     vanish exactly while the user was orienting — a compromise this does not need.
+   - freezing only at gesture rate, then redrawing once the gesture settled. That protected
+     track-up navigation from a risk that does not exist, and left it paying the full cost: one
+     bearing change per GPS fix, 120 paths rewritten each time. The rate detector, the settle
+     window and the deferred redraw are all gone with it.
+   The user put the whole thing in one sentence before any of this was measured: "first rotate,
+   THEN paste the rest on top — I get the impression you redraw EVERYTHING at every angle". */
+let _rotFreeze = false;
+let _rotThawTid = null;
+
+(function _patchPathWriteDuringRotation() {
+  if (!L.SVG || !L.SVG.prototype || L.SVG.prototype.__nvRotFreeze) return;
+  const orig = L.SVG.prototype._setPath;
+  L.SVG.prototype._setPath = function (layer, path) {
+    if (_rotFreeze) return;
+    return orig.call(this, layer, path);
+  };
+  L.SVG.prototype.__nvRotFreeze = true;
+})();
+
+map.on('rotate', () => {
+  _rotLastRotateAt = Date.now();
+  _rotFreeze = true;
+  /* Released on the next tick, so only the writes this rotation triggers are skipped — measured
+     synchronous: one write per layer per setBearing. The timeout is also the safety net: however
+     this is reached, the freeze cannot outlive the turn that set it. */
+  if (_rotThawTid) clearTimeout(_rotThawTid);
+  _rotThawTid = setTimeout(() => { _rotThawTid = null; _rotFreeze = false; }, 0);
+});
 
 function _wfsLayerAdded(wfsLayer) {
   _wfsCount++;
@@ -1674,6 +1992,26 @@ function _splitOgcUrl(url) {
    Web Feature Service.  Only active at zoom >= minZoom (default 15) to avoid
    loading thousands of features at small scales.  Uses EPSG:4326 BBOX.
    Renders as L.geoJSON with styled polygons/points; features are clickable. */
+/* How much more than the screen a WFS request asks for. Leaflet's pad() extends EACH side by
+   this fraction of the span, so 0.1 is a 20 % larger box overall.
+   Chosen from measurement against the live Agenzia Entrate service, not from feel:
+   - it absorbs ~80 px of gesture drift on this screen, against the 18x12 px actually observed
+     at the end of a two-finger turn;
+   - it costs x1.46-1.55 in payload (CP:CadastralParcel at z18: 56.6 -> 87.6 KB;
+     CP:CadastralZoning at z14: 810 KB -> 1.18 MB), paid far less often thanks to _covered();
+   - it stays clear of the 1000-feature ceiling the request already asks for: numberMatched
+     equalled numberReturned at every size probed, worst case 203 parcels at z18 with a box
+     twice this one. The ceiling was the reason to be careful here — a WFS box is features, not
+     pixels like a WMS one — so it was measured rather than assumed. */
+const _NV_WFS_PAD = 0.1;
+
+/* Zoom below which the Agenzia Entrate cadastre publishes no parcels at all. Read off the
+   MaxScaleDenominator of 5000 it declares for CP:CadastralParcel, and confirmed twice against
+   the live service. Used ONLY to decide whether an empty answer is worth reporting — never to
+   decide what is drawn. See the empty-response branch in _render for why it lives here as
+   service knowledge rather than as a per-layer setting. */
+const _AE_PARCEL_MIN_Z = 17;
+
 const _WFSLayer = L.Layer.extend({
   options: { typeName:'', version:'2.0.0', minZoom:15, opacity:0.8, crs:null,
              filterAttr:'', filterVals:'', color:null, hollow:false, fillOpacity:null, pane:null,
@@ -1711,7 +2049,11 @@ const _WFSLayer = L.Layer.extend({
       }
       _reorderMapPanes(map);
     }
-    map.on('moveend zoomend', this._schedule, this);
+    /* moveend goes through the coverage guard, zoomend does not: a zoom changes both the extent
+       and which features are worth drawing, so it always needs a fresh request. Same split the
+       WMS layer makes, for the same reason. */
+    map.on('moveend', this._onViewChange, this);
+    map.on('zoomend', this._schedule, this);
     this._schedule();
     _wfsLayerAdded(this);
   },
@@ -1719,7 +2061,10 @@ const _WFSLayer = L.Layer.extend({
   onRemove(map) {
     clearTimeout(this._timer);
     this._reqId = (this._reqId || 0) + 1;  // invalidate any in-flight render so late responses don't re-add features
-    map.off('moveend zoomend', this._schedule, this);
+    map.off('moveend', this._onViewChange, this);
+    map.off('zoomend', this._schedule, this);
+    this._fetchedBounds = null;
+    this._fetchedZoom   = null;
     if (this._geo) { try { map.removeLayer(this._geo); } catch(_) {} this._geo = null; }
     _wfsLayerRemoved(this);
   },
@@ -1888,6 +2233,69 @@ const _WFSLayer = L.Layer.extend({
 
   _schedule() { clearTimeout(this._timer); this._timer = setTimeout(() => this._update(), 400); },
 
+  /* Is what was last asked for still enough to cover the screen? Same question, same shape, as
+     _WMSImageLayer._covered — this layer simply never asked it. Without it every gesture that
+     ended with a few pixels of drift refetched and then rebuilt every feature on the map:
+     _render adds the new GeoJSON layer and removes the old one, so the whole SVG is recreated.
+     Measured on the bench: a 45 degree turn plus 18x12 px of drift cost 2 _update and 2 full
+     replaces with two WFS layers loaded, and the field device carries five.
+     It closes the toast flood as well, and that is not a coincidence: three of those five layers
+     hold no data over the area being browsed, so they answered EMPTY on every single refetch and
+     each gesture opened a fresh burst. Fewer refetches, fewer bursts. */
+  _covered() {
+    const b = this._fetchedBounds;
+    if (!b || !this._map) return false;
+    const map = this._map;
+    if (this._fetchedZoom !== map.getZoom()) return false;
+    const s = map.getSize();
+    return [[0, 0], [s.x, 0], [s.x, s.y], [0, s.y]]
+      .every(p => b.contains(map.containerPointToLatLng(p)));
+  },
+
+  _onViewChange() { if (!this._covered()) this._schedule(); },
+
+  /* The area to ask for. Mirrors _WMSImageLayer._requestBounds and exists for the same reason:
+     the viewport envelope is bearing-DEPENDENT — 412x915 at 0 degrees, 938x938 at 45 — so a
+     region fetched at one bearing cannot cover the screen at the next. Rotation itself fires no
+     moveend, so nothing is asked for while the map turns; the refetch lands at the END of the
+     gesture, when the fingers drift a few pixels and the envelope no longer matches. One rebuild
+     per turn, which is what consecutive rotations looked like from the field.
+     The circumscribed square is bearing-INDEPENDENT: once fetched, no turn uncovers it.
+     Two differences from the WMS, both because a WFS box means FEATURES and not pixels:
+     - The square is refused at or below the layer's own minZoom, and refused whenever it would
+       reach further than one zoom level of the plain request. One level out doubles the ground
+       per pixel, and the layer already accepts asking for that much at minZoom, so this never
+       asks for more ground than the layer is already willing to ask for. The comparison is made
+       in METRES at runtime rather than assumed: the inequality behind it (w²+h² < 4wh) holds
+       only for screen aspect ratios between about 1:3.7 and 3.7:1 — true of every phone, not
+       true by definition, and this must not become another constant tuned to one device.
+     - It is padded like the plain request, and the pad is what makes it work at all: the screen
+       corners sit at exactly half a diagonal from the centre, which is the square's inscribed
+       radius, so a bare square has ZERO margin against the pan that ends a two-finger gesture.
+       The pad turns that into ~100 px of slack against the 18x12 px measured on the bench. */
+  _requestBounds() {
+    const map   = this._map;
+    const plain = map.getBounds().pad(_NV_WFS_PAD);
+    if (typeof map.getBearing !== 'function' || !map.getBearing()) return plain;
+    if (map.getZoom() <= (this.options.minZoom || 0)) return plain;
+    const size = map.getSize();
+    const r    = Math.ceil(Math.sqrt(size.x * size.x + size.y * size.y) / 2);
+    const z    = map.getZoom();
+    const c    = map.project(map.getCenter(), z);
+    const square = L.latLngBounds(map.unproject(c.add(L.point(-r,  r)), z),
+                                  map.unproject(c.add(L.point( r, -r)), z)).pad(_NV_WFS_PAD);
+    /* The square asks for roughly twice the features of the envelope, and a server that reaches
+       its count ceiling truncates in SILENCE — the map would simply be missing parcels, which is
+       worse than the redraw this exists to avoid. So the server's own answer decides: once a
+       response has come back at the ceiling this layer stops enlarging, and goes back to the
+       square when one comes back below it. No constant to tune, and it adapts to how dense the
+       ground actually is instead of to an assumption about it. */
+    if (this._ceilingHit) return plain;
+    const side = b => Math.max(map.distance(b.getNorthWest(), b.getNorthEast()),
+                               map.distance(b.getNorthWest(), b.getSouthWest()));
+    return side(square) > side(plain) * 2 ? plain : square;
+  },
+
   /* Human name for toasts, so a message says WHICH overlay it refers to (there can be
      several WFS at once: Catasto Particelle, Fogli, user-added). Falls back when unnamed. */
   _name() { return this.options.attribution ? '"' + this.options.attribution + '"' : 'WFS layer'; },
@@ -1899,12 +2307,16 @@ const _WFSLayer = L.Layer.extend({
       if (this._geo) { try { map.removeLayer(this._geo); } catch(_) {} this._geo = null; }
       const now = Date.now();
       if (!this._lastZoomWarn || now - this._lastZoomWarn > 5000) {
-        _loadToast('Zoom in to load ' + this._name(), 'warn', undefined, 'map-quiet');
+        _reportBelowScale(this._name());
         this._lastZoomWarn = now;
       }
       return;
     }
-    const b = map.getBounds();
+    /* Recorded when the request is ISSUED, not when it lands, so a second gesture during a slow
+       fetch does not queue another request for the same view. */
+    const b = this._requestBounds();
+    this._fetchedBounds = b;
+    this._fetchedZoom   = map.getZoom();
     const reqId = ++this._reqId;
     const ver  = parseFloat(this.options.version || '2.0');
     const srsName = this.options.crs || (ver >= 2.0 ? 'urn:ogc:def:crs:EPSG::4326' : 'EPSG:4326');
@@ -1938,6 +2350,7 @@ const _WFSLayer = L.Layer.extend({
     // operator form. For CP:CadastralParcel / CP:CadastralZoning we must fetch by BBOX only and filter
     // the returned features locally before rendering.
     const _isCadFilter = /^CP:(CadastralParcel|CadastralZoning)$/i.test(this.options.typeName || '');
+    const _isCadParcel = /^CP:CadastralParcel$/i.test(this.options.typeName || '');
     // Build a client-side matcher when the filter is active. Supports comma-separated values and
     // OGC-style wildcards (* and ?), matched case-insensitively against the stringified property value.
     let _clientFilter = null;
@@ -2008,6 +2421,7 @@ const _WFSLayer = L.Layer.extend({
 
     const _render = geojson => {
       if (reqId !== this._reqId) return;
+      this._errShown = false;   // a good response re-arms the latch for the next failure
       // Client-side filter pass for servers that don't support FILTER (Agenzia Entrate cadastral WFS).
       // Applied before the empty-check so the toast distinguishes "no features at all" vs "filtered out".
       if (_clientFilter && _isCadFilter && geojson.features) {
@@ -2015,19 +2429,48 @@ const _WFSLayer = L.Layer.extend({
       }
       if (!geojson.features || geojson.features.length === 0) {
         const _hasFilter = this.options.filterAttr && this.options.filterVals;
+        /* Below the scale window the SERVICE declares, an empty answer says nothing about the
+           ground: the parcels exist, the service just does not publish them at this scale, so
+           "no features in current view" is a FALSE statement rather than a true one withheld.
+           Keyed on typeName, like the FILTER bypass above (_isCadFilter) and for the same
+           reason — this is knowledge about one public service, not a user setting. A config
+           field was tried first and was worse: the bundled entry is skipped as a duplicate for
+           anyone who already has a saved config (tools.js), so the fix would have reached new
+           installs only, and the field would have been invisible in the add-service form.
+           Reporting only, deliberately: minZoom alone decides what is DRAWN and is untouched
+           here, so nothing vanishes that did not vanish before, and the cadastral wizard —
+           which overrides minZoom for the duration of a search and never reads toasts — cannot
+           be affected at all.
+           ⚠ Two known weaknesses, both accepted rather than solved. The precedent above exists
+           because the server REJECTS a request; this one is only about the wording of a notice,
+           so it rests on a weaker justification. And 17 comes from the MaxScaleDenominator of
+           5000 the service declares, which is NOT re-read at runtime: if the Agenzia republishes
+           at another scale this line goes quietly wrong, and it is the first place to look. */
+        const _belowService = _isCadParcel && map.getZoom() < _AE_PARCEL_MIN_Z;
         // This fires on every empty viewport refresh — i.e. every pan/zoom over an area
         // with no matching features — which is spammy. Throttle to once per 8 s per layer
         // and honour the startup grace window (via _loadToast).
         const _now = Date.now();
-        if (!this._lastEmptyWarn || _now - this._lastEmptyWarn > 8000) {
-          _loadToast(_hasFilter
-            ? this._name() + ': no features match filter — check attribute name and values'
-            : this._name() + ': no features in current view', 'warn', undefined, 'map-quiet');
+        if (!_belowService && (!this._lastEmptyWarn || _now - this._lastEmptyWarn > 8000)) {
+          if (_hasFilter) {
+            /* A filter matching nothing is actionable and has to name the layer it is set on.
+               It cannot pile up the way the plain empty view does: the filter is something the
+               user has just typed on one layer, not a condition every layer meets at once. */
+            _loadToast(this._name() + ': no features match filter — check attribute name and values',
+                       'warn', undefined, 'map-quiet');
+          } else {
+            _reportWfsEmpty(this._name());
+          }
           this._lastEmptyWarn = _now;
         }
         try { this.fire('wfsupdate', { count: 0 }); } catch(_) {}
         return;
       }
+      /* The server's own signal that it truncated the answer, used by _requestBounds to stop
+         asking for the enlarged square. ⚠ Partial by construction: it can only see the count WE
+         asked for, so a server enforcing a LOWER ceiling of its own truncates undetected. Where
+         it cannot see, it does nothing — it never makes the request worse than it already was. */
+      this._ceilingHit = geojson.features.length >= 1000;
       const prev = this._geo;
       this._selectedLayer = null;
       const self = this;
@@ -2225,6 +2668,30 @@ const _WFSLayer = L.Layer.extend({
       } catch(_) { return null; }
     };
 
+    /* One toast per failure EPISODE, not per failed request — the same latch the WMS layer
+       keeps in _notifyErr, and this was the only reporting path in the app without one. It
+       matters more here than anywhere else: an 'error' toast skips the cooldown in toastMsg
+       AND is exempt from its FIFO cap, so nothing at all was holding these back, and a layer
+       that fails on one gesture fails on every gesture. The server's exception text is part of
+       the message, so a server that varies it (a request id, a timestamp) slipped past even the
+       identical-text dedupe and every failure added another toast.
+       Logged as well as shown, which the WMS path already did and this one did not: a WFS
+       failure reached the diagnostic report nowhere, so a report taken while these were
+       covering the screen came back clean.
+       The latch is per layer, so several failing layers still produce several reports: the toast
+       side of that is collected by _reportWfsError, the log side deliberately is not. */
+    const _errOnce = msg => {
+      if (reqId !== this._reqId) return;
+      /* Before the latch, deliberately: a view whose request FAILED must not count as covered,
+         or the guard would treat the failure as a fetched result and never retry it. The latch
+         below rations the toast, it must not ration this. */
+      this._fetchedBounds = null;
+      if (this._errShown) return;
+      this._errShown = true;
+      _reportLayerError(this._name(), msg);
+      console.warn('[navitron] WFS ' + this._name() + ' failed:', msg, '|', this._wfsUrl);
+    };
+
     const _parse = text => {
       if (reqId !== this._reqId) return;
       // Try JSON first (GeoServer, QGIS Server, etc.)
@@ -2254,18 +2721,18 @@ const _WFSLayer = L.Layer.extend({
         const _exc = _d.querySelector('ExceptionText,exceptionText');
         const _hint = (this.options.filterAttr && this.options.filterVals)
           ? ' — filter active: verify attribute name and WFS version' : '';
-        _loadToast(this._name() + ': server returned <' + _root.localName + '>' + (_exc ? ': ' + _exc.textContent.substring(0,60) : '') + _hint, 'error');
-      } catch(_) { _loadToast(this._name() + ': invalid response', 'error'); }
+        _errOnce(this._name() + ': server returned <' + _root.localName + '>' + (_exc ? ': ' + _exc.textContent.substring(0,60) : '') + _hint);
+      } catch(_) { _errOnce(this._name() + ': invalid response'); }
     };
 
     if (window.cordova && cordova.plugin && cordova.plugin.http) {
       cordova.plugin.http.sendRequest(url, { method:'get', responseType:'arraybuffer' },
         res => _parse(_decodeXmlBuffer(res.data)),
-        () => { if (reqId === this._reqId) _loadToast(this._name() + ': request failed', 'error'); }
+        () => { if (reqId === this._reqId) _errOnce(this._name() + ': request failed'); }
       );
     } else {
       fetch(url).then(r => r.arrayBuffer()).then(buf => _parse(_decodeXmlBuffer(buf)))
-        .catch(() => { if (reqId === this._reqId) _loadToast(this._name() + ': request failed', 'error'); });
+        .catch(() => { if (reqId === this._reqId) _errOnce(this._name() + ': request failed'); });
     }
   }
 });

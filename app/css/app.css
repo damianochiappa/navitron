@@ -526,15 +526,30 @@ html, body {
   transform: translateY(18px);
   transition: opacity .28s cubic-bezier(.4,0,.2,1), transform .28s cubic-bezier(.4,0,.2,1);
   box-shadow: 0 4px 20px rgba(0,0,0,.5);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
   white-space: nowrap;
+  /* Opaque, and no backdrop-filter. Every floating panel over the map gets the same
+     treatment so they stay consistent with each other. Two reasons, both from the
+     device on 31/08: under stress this panel rendered EMPTY — the chrome painted, the
+     contents did not — which is a compositing layer failing to paint its subtree, and
+     backdrop-filter is what forced it onto that layer. And simply dropping the blur was
+     tried first and was worse: at 92%% the sharp map showed through and legibility fell.
+     Opaque solves both — nothing shows through at all, so there is nothing to blur and
+     nothing to read around. The cost is the frosted-glass look, given up on purpose.
+     .modal-backdrop keeps its blur: it is a scrim meant to dim the map, not a panel. */
 }
 .toast-item.show { opacity: 1; transform: translateY(0); }
-.toast-item.success { border-color: var(--success); color: var(--success); background: rgba(76,175,125,.12); }
-.toast-item.error   { border-color: var(--danger);  color: var(--danger);  background: rgba(239,83,80,.12); }
-.toast-item.warn    { border-color: var(--warn);     color: var(--warn);    background: rgba(245,166,35,.12); }
-.toast-item.info    { border-color: var(--accent);   color: var(--accent);  background: rgba(91,156,246,.10); }
+/* ⚠ These four OVERRIDE the opaque background of .toast-item above, and they used to do it with
+   a 12% colour — i.e. a toast that was almost entirely see-through, readable only because a
+   backdrop-filter frosted the map behind it. Removing that blur on 31/08 left them transparent
+   and unreadable, reported immediately from the device. The tints below are the SAME colours
+   flattened onto --surface3 once, so the appearance is unchanged and nothing depends on a
+   compositing layer any more.
+   The lesson, twice learned the same day: check the rules that OVERRIDE a property, not just the
+   one that declares it. */
+.toast-item.success { border-color: var(--success); color: var(--success); background: #243a46; }
+.toast-item.error   { border-color: var(--danger);  color: var(--danger);  background: #382f40; }
+.toast-item.warn    { border-color: var(--warn);     color: var(--warn);    background: #39393b; }
+.toast-item.info    { border-color: var(--accent);   color: var(--accent);  background: #253550; }
 /* Important messages (error/warn) announce themselves with a brief glow pulse
    on entry — twice, then settle. Not a continuous blink: draws the eye once
    without nagging. Uses currentColor so the glow matches the message type. */
@@ -1029,7 +1044,7 @@ a.polyline-measure-controlOnBgColor:hover {
   z-index: 800;
   width: 276px;
   max-height: 70vh;
-  background: rgba(16, 22, 36, 0.92);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-top-color: rgba(255,255,255,.07);
   border-radius: var(--r);
@@ -1037,8 +1052,15 @@ a.polyline-measure-controlOnBgColor:hover {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  /* Opaque, and no backdrop-filter. Every floating panel over the map gets the same
+     treatment so they stay consistent with each other. Two reasons, both from the
+     device on 31/08: under stress this panel rendered EMPTY — the chrome painted, the
+     contents did not — which is a compositing layer failing to paint its subtree, and
+     backdrop-filter is what forced it onto that layer. And simply dropping the blur was
+     tried first and was worse: at 92%% the sharp map showed through and legibility fell.
+     Opaque solves both — nothing shows through at all, so there is nothing to blur and
+     nothing to read around. The cost is the frosted-glass look, given up on purpose.
+     .modal-backdrop keeps its blur: it is a scrim meant to dim the map, not a panel. */
 }
 #map-tools.hidden { display: none; }
 .mt-header {
@@ -1079,15 +1101,22 @@ a.polyline-measure-controlOnBgColor:hover {
   bottom: var(--lane-bottom); right: 46px;
   z-index: 800;
   width: 264px;
-  background: rgba(16,22,36,0.92);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-top-color: rgba(255,255,255,.07);
   border-radius: var(--r);
   box-shadow: var(--shadow);
   display: flex; flex-direction: column;
   overflow: hidden;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  /* Opaque, and no backdrop-filter. Every floating panel over the map gets the same
+     treatment so they stay consistent with each other. Two reasons, both from the
+     device on 31/08: under stress this panel rendered EMPTY — the chrome painted, the
+     contents did not — which is a compositing layer failing to paint its subtree, and
+     backdrop-filter is what forced it onto that layer. And simply dropping the blur was
+     tried first and was worse: at 92%% the sharp map showed through and legibility fell.
+     Opaque solves both — nothing shows through at all, so there is nothing to blur and
+     nothing to read around. The cost is the frosted-glass look, given up on purpose.
+     .modal-backdrop keeps its blur: it is a scrim meant to dim the map, not a panel. */
 }
 #nav-panel.hidden { display: none; }
 
@@ -1098,14 +1127,21 @@ a.polyline-measure-controlOnBgColor:hover {
   transition: left .3s cubic-bezier(.4,0,.2,1);
   z-index: 810;
   display: flex; align-items: center; gap: 8px;
-  background: rgba(16,22,36,0.95);
+  background: var(--surface);
   border: 1px solid #ffcc00;
   border-radius: 20px;
   padding: 6px 12px;
   box-shadow: var(--shadow);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   white-space: nowrap;
+  /* Opaque, and no backdrop-filter. Every floating panel over the map gets the same
+     treatment so they stay consistent with each other. Two reasons, both from the
+     device on 31/08: under stress this panel rendered EMPTY — the chrome painted, the
+     contents did not — which is a compositing layer failing to paint its subtree, and
+     backdrop-filter is what forced it onto that layer. And simply dropping the blur was
+     tried first and was worse: at 92%% the sharp map showed through and legibility fell.
+     Opaque solves both — nothing shows through at all, so there is nothing to blur and
+     nothing to read around. The cost is the frosted-glass look, given up on purpose.
+     .modal-backdrop keeps its blur: it is a scrim meant to dim the map, not a panel. */
 }
 #sel-badge.hidden { display: none; }
 #sel-badge.mode-active {
@@ -1156,11 +1192,19 @@ a.polyline-measure-controlOnBgColor:hover {
   left: 50%; transform: translateX(-50%);
   z-index: 812;
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center;
-  background: rgba(16,22,36,0.96);
+  background: var(--surface);
   border: 1px solid rgba(255,204,0,.5); border-radius: 16px;
   padding: 8px 14px; box-shadow: var(--shadow);
-  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
   white-space: nowrap; max-width: 90vw;
+  /* Opaque, and no backdrop-filter. Every floating panel over the map gets the same
+     treatment so they stay consistent with each other. Two reasons, both from the
+     device on 31/08: under stress this panel rendered EMPTY — the chrome painted, the
+     contents did not — which is a compositing layer failing to paint its subtree, and
+     backdrop-filter is what forced it onto that layer. And simply dropping the blur was
+     tried first and was worse: at 92%% the sharp map showed through and legibility fell.
+     Opaque solves both — nothing shows through at all, so there is nothing to blur and
+     nothing to read around. The cost is the frosted-glass look, given up on purpose.
+     .modal-backdrop keeps its blur: it is a scrim meant to dim the map, not a panel. */
 }
 #wfs-target-picker.hidden { display: none; }
 .wtp-label { font-size: 11px; color: var(--text-muted); flex-basis: 100%; text-align: center; margin-bottom: 2px; }
@@ -1183,16 +1227,20 @@ a.polyline-measure-controlOnBgColor:hover {
   transition: left .3s cubic-bezier(.4,0,.2,1);
   z-index: 810;
   display: flex; flex-direction: column; align-items: center; gap: 3px;
-  background: rgba(16,22,36,0.95);
+  background: var(--surface);
   border: 1px solid #4f8ef7; border-radius: 16px;
   padding: 7px 14px 6px; box-shadow: var(--shadow);
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+
   white-space: nowrap;
+  /* Opaque, no backdrop-filter — same treatment as every other floating panel. */
 }
 #kml-edit-bar.hidden { display: none; }
 #kml-edit-main { display: flex; align-items: center; gap: 8px; }
 #kml-edit-label { color: #4f8ef7; font-size: 13px; font-weight: 600; }
 #kml-edit-hint { font-size: 10px; color: var(--text-muted); letter-spacing: .2px; }
+/* Same line, second job: why editing is unavailable when the viewport holds more vertices than
+   the editor will materialise. A state, so it stays put instead of passing like a toast. */
+#kml-edit-hint.nv-vx-blocked { color: var(--warn); font-weight: 600; }
 #kml-edit-save, #kml-edit-cancel {
   background: none; border: none; cursor: pointer;
   color: var(--text-muted); font-size: 13px; padding: 2px 6px; border-radius: 4px;
@@ -1246,15 +1294,22 @@ a.polyline-measure-controlOnBgColor:hover {
   bottom: var(--lane-bottom); left: 10px;
   z-index: 800;
   width: 232px;
-  background: rgba(16,22,36,0.92);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-top-color: rgba(255,255,255,.07);
   border-radius: var(--r);
   box-shadow: var(--shadow);
   display: flex; flex-direction: column;
   overflow: hidden;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  /* Opaque, and no backdrop-filter. Every floating panel over the map gets the same
+     treatment so they stay consistent with each other. Two reasons, both from the
+     device on 31/08: under stress this panel rendered EMPTY — the chrome painted, the
+     contents did not — which is a compositing layer failing to paint its subtree, and
+     backdrop-filter is what forced it onto that layer. And simply dropping the blur was
+     tried first and was worse: at 92%% the sharp map showed through and legibility fell.
+     Opaque solves both — nothing shows through at all, so there is nothing to blur and
+     nothing to read around. The cost is the frosted-glass look, given up on purpose.
+     .modal-backdrop keeps its blur: it is a scrim meant to dim the map, not a panel. */
 }
 #flight-panel.hidden { display: none; }
 #flight-panel.collapsed .flight-grid { display: none; }
@@ -1264,15 +1319,22 @@ a.polyline-measure-controlOnBgColor:hover {
   bottom: var(--lane-bottom); left: 10px;
   z-index: 800;
   width: 232px;
-  background: rgba(16,22,36,0.92);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-top-color: rgba(255,255,255,.07);
   border-radius: var(--r);
   box-shadow: var(--shadow);
   display: flex; flex-direction: column;
   overflow: hidden;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  /* Opaque, and no backdrop-filter. Every floating panel over the map gets the same
+     treatment so they stay consistent with each other. Two reasons, both from the
+     device on 31/08: under stress this panel rendered EMPTY — the chrome painted, the
+     contents did not — which is a compositing layer failing to paint its subtree, and
+     backdrop-filter is what forced it onto that layer. And simply dropping the blur was
+     tried first and was worse: at 92%% the sharp map showed through and legibility fell.
+     Opaque solves both — nothing shows through at all, so there is nothing to blur and
+     nothing to read around. The cost is the frosted-glass look, given up on purpose.
+     .modal-backdrop keeps its blur: it is a scrim meant to dim the map, not a panel. */
 }
 #nav-hud.hidden { display: none; }
 #nav-follow-badge {
@@ -1280,12 +1342,19 @@ a.polyline-measure-controlOnBgColor:hover {
   bottom: var(--lane-bottom);
   left: 50%; transform: translateX(-50%);
   z-index: 810;
-  background: rgba(16,22,36,0.95);
+  background: var(--surface);
   border: 1px solid var(--accent);
   border-radius: 20px;
   box-shadow: var(--shadow);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  /* Opaque, and no backdrop-filter. Every floating panel over the map gets the same
+     treatment so they stay consistent with each other. Two reasons, both from the
+     device on 31/08: under stress this panel rendered EMPTY — the chrome painted, the
+     contents did not — which is a compositing layer failing to paint its subtree, and
+     backdrop-filter is what forced it onto that layer. And simply dropping the blur was
+     tried first and was worse: at 92%% the sharp map showed through and legibility fell.
+     Opaque solves both — nothing shows through at all, so there is nothing to blur and
+     nothing to read around. The cost is the frosted-glass look, given up on purpose.
+     .modal-backdrop keeps its blur: it is a scrim meant to dim the map, not a panel. */
 }
 #nav-follow-badge.hidden { display: none; }
 #nav-follow-btn {
