@@ -1649,3 +1649,23 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 });
+
+/* ===== WFS QUEUE INDICATOR =====
+   With the WFS requests running one at a time, the layers appear one after another instead of all
+   at once. That is the point — it is what keeps the main thread breathing — but it leaves a gap
+   the user cannot close on their own: a map that is still filling looks exactly like a map that
+   has finished and is missing data. The second reading is the dangerous one, because it says the
+   layer is broken when it is merely next in line.
+   So every WFS row states which of the three it is in: loading now, waiting its turn, or done.
+   Rows are matched by layer OBJECT, never by name — two services can carry the same attribution,
+   and a name match would light up the wrong row. */
+map.on('wfsqueue', q => {
+  const list = document.getElementById('layer-list');
+  if (!list) return;
+  list.querySelectorAll('.layer-item[data-is-wfs]').forEach(el => {
+    const layer = loadedLayers[el.dataset.id];
+    if (!layer) return;
+    el.classList.toggle('wfs-loading', layer === q.busy);
+    el.classList.toggle('wfs-queued', q.waiting.indexOf(layer) !== -1);
+  });
+});

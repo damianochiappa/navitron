@@ -1682,6 +1682,152 @@ let _rotThawTid = null;
   L.SVG.prototype.__nvRotFreeze = true;
 })();
 
+/* ===== FRAME PROBE — instrumentation only, nothing acts on it yet =====
+   Times how long frames take while the map is DOING something, so that the threshold for a
+   future "the app is slowing down" notice can be picked from real numbers rather than guessed.
+
+   Not tied to rotation, and that is the point rather than a convenience. Measuring only while
+   the map turns assumes the answer: it can only ever find slowness during a turn, and could
+   never report that a pan on the same view is just as slow — which is the one observation that
+   would clear rotation of the blame. The speed panel was already suspected the same way and
+   turned out to be a victim, not a cause.
+
+   A byte counter would be the wrong instrument regardless: performance.memory reports the JS
+   heap alone, and the cost here is DOM nodes, path rewrites and tile bitmaps, none of which
+   live there. The vertex editor is the precedent — 16003 nodes and 53 MB of DOM against a heap
+   that never moved. (measureUserAgentSpecificMemory would see all of it, but needs cross-origin
+   isolation, which a file:// Cordova page cannot have.) Frame time is the symptom the user
+   actually feels, so that is what is timed.
+
+   ⚠ Sampling is anchored to ACTIVITY, never to the clock, and a perpetual rAF was rejected for
+   a reason that outranks its battery cost: on a still map frames do not arrive because there is
+   nothing to draw, not because the app is slow, so an idle sampler would read its own silence as
+   a 900 ms frame. Frame time only means anything while rendering work is in flight. In exchange
+   the probe costs nothing at rest, and while the map moves it adds no frames — it rides the ones
+   already being drawn.
+
+   Shaped after the cache probe in geoapp.html, deliberately: a median, a best-ever baseline kept
+   per device, and the ratio between the two — the ratio being the only device-independent part.
+   Two things travel with every reading because a duration alone calibrates nothing: the count of
+   paths in the overlay pane (the independent variable) and WHICH interaction opened the window,
+   which is what makes "rotation is to blame" a falsifiable claim instead of an assumption.
+   The path count is read once per window, never per frame: querySelectorAll at frame rate would
+   be a cost of its own inside the measurement meant to observe it. */
+const _FRAME_PROBE_QUIET_MS    = 400;   // the interaction is over once nothing has arrived for this long
+const _FRAME_PROBE_MIN_SAMPLES = 3;     // fewer frames than this is not a median, it is noise
+const _FRAME_PROBE_BASE_KEY    = 'nv_frame_base';
+const _FRAME_PROBE_LOG_RATIO   = 2;     // below this a window is unremarkable; logging it would drown the log
+let _frameProbeOn = false, _frameProbeSamples = [], _frameProbeLastFrame = 0;
+let _frameProbeActivityAt = 0;          // own timestamp: _rotLastRotateAt belongs to the toast quiet window
+let _frameProbeCauses = null;           // Set of the interactions this window saw
+
+/* Opened by every interaction that makes the map render. Track-up navigation pans on each GPS
+   fix, so windows follow one another closely while navigating — that is intended: those frames
+   are exactly the ones worth measuring, and they are frames the map was drawing anyway. */
+/* The causes are kept as a SET and joined, never collapsed to a single label. The first version
+   wrote 'mixed' for any window that saw more than one interaction, and the field report proved
+   that useless: a zoom fires 'zoom' AND 'move', so every zoom read 'mixed' too, and 'mixed' could
+   no longer be told apart from a turn made while panning — which is exactly the comparison the
+   whole probe exists to make. 'rotate+move' and 'move+zoom' answer it; 'mixed' hid it. */
+function _frameProbeStart(cause) {
+  _frameProbeActivityAt = Date.now();
+  if (_frameProbeOn) { _frameProbeCauses.add(cause); return; }
+  _frameProbeOn = true;
+  _frameProbeLastFrame = 0;
+  _frameProbeCauses = new Set([cause]);
+  requestAnimationFrame(_frameProbeFrame);
+}
+
+function _frameProbeFrame(now) {
+  if (!_frameProbeOn) return;
+  /* The first frame of a window establishes the origin and produces no sample — there is nothing
+     to subtract from yet. It is NOT a discarded idle interval: the window opens on the interaction,
+     so the very next frame is already part of it, and n frames yield n-1 intervals. */
+  if (_frameProbeLastFrame) _frameProbeSamples.push(now - _frameProbeLastFrame);
+  _frameProbeLastFrame = now;
+  if (Date.now() - _frameProbeActivityAt >= _FRAME_PROBE_QUIET_MS) { _frameProbeEnd(); return; }
+  requestAnimationFrame(_frameProbeFrame);
+}
+
+function _frameProbeEnd() {
+  _frameProbeOn = false;
+  const s = _frameProbeSamples;
+  const cause = _frameProbeCauses ? Array.from(_frameProbeCauses).sort().join('+') : 'unknown';
+  _frameProbeSamples = [];
+  _frameProbeLastFrame = 0;
+  _frameProbeCauses = null;
+  if (s.length < _FRAME_PROBE_MIN_SAMPLES) return;
+  s.sort((a, b) => a - b);
+  /* A real median on both parities. s[len>>1] alone takes the upper of the two middle values on
+     an even count — [16,16,100,500] would read 100 instead of 58 — which biases every even
+     window towards "slower than it was" and would make a threshold fire on arithmetic. */
+  const mid = s.length >> 1;
+  const med = (s.length % 2) ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  /* Best ever, not a rolling average: the baseline has to describe what this device can do when
+     nothing is in the way, and an average would drift upward on exactly the slow sessions the
+     ratio is supposed to expose. */
+  let base = parseFloat(localStorage.getItem(_FRAME_PROBE_BASE_KEY));
+  if (!isFinite(base) || med < base) {
+    base = med;
+    try { localStorage.setItem(_FRAME_PROBE_BASE_KEY, String(base)); } catch (_) {}
+  }
+  /* Counted across the WHOLE map container, not `.leaflet-overlay-pane`. The first version used
+     that selector and the field report came back with "Vector paths 1" on thirteen WFS layers
+     over Rome: the WFS layers are given their OWN panes (see `pane:` in the layer options), so
+     the shared overlay pane was very nearly empty and the number meant nothing — while being the
+     one variable a threshold was going to be calibrated against.
+     Markers are counted separately because leaflet-rotate subscribes every Marker to the `rotate`
+     event (`markerProto.getEvents` → `{ rotate: this.update }`). The bearing freeze above blocks
+     `L.SVG._setPath`, so it stops path rewrites and nothing else — a marker still updates on
+     every bearing change. If a turn costs more than a pan on the same view, these are the nodes
+     that would explain it, so the count has to be in the report to be checkable at all. */
+  let paths = -1, markers = -1;
+  try {
+    const box = (typeof map.getContainer === 'function') ? map.getContainer() : document;
+    paths   = box.querySelectorAll('path').length;
+    markers = box.querySelectorAll('.leaflet-marker-icon').length;
+  } catch (_) {}
+  const ratio = med / (base || 1);
+  window._nvLastFrame = { ms: med, frames: s.length, paths, markers, cause, ratio };
+  /* The worst window of the session is kept beside the last one, because the report is saved
+     minutes after the trouble: by then the last window is usually the menu opening, and the
+     slow one the user actually wanted to report is gone. */
+  const w = window._nvWorstFrame;
+  if (!w || ratio > w.ratio) window._nvWorstFrame = window._nvLastFrame;
+  /* Logged only when a window stands out. Navigation opens one per GPS fix, and logging each
+     would push everything else out of the report the log exists to fill. */
+  if (typeof nvLog === 'function' && ratio >= _FRAME_PROBE_LOG_RATIO) {
+    nvLog('frame probe', cause, med.toFixed(1) + 'ms', 'baseline', base.toFixed(1) + 'ms',
+          'ratio', ratio.toFixed(1) + 'x', 'frames', s.length,
+          'paths', paths, 'markers', markers, 'bearing', Math.round(map.getBearing ? map.getBearing() : 0));
+  }
+}
+window._nvFrameProbeBaseKey = _FRAME_PROBE_BASE_KEY;
+
+/* Long tasks — the passive half of the measurement, and the only one that sees a block nobody
+   gestured for: a large GML parse, the vertex editor building its handles. It needs no rAF and
+   costs nothing when the main thread is healthy, since the browser only reports what already
+   went wrong. Availability in this WebView is NOT assumed — it is recorded, and the report says
+   plainly when the API is missing rather than printing a silent zero that reads like good news. */
+(function _observeLongTasks() {
+  window._nvLongTasks = null;
+  try {
+    if (typeof PerformanceObserver !== 'function') return;
+    const types = PerformanceObserver.supportedEntryTypes;
+    if (types && types.indexOf('longtask') === -1) return;
+    const acc = { count: 0, worstMs: 0, totalMs: 0 };
+    new PerformanceObserver(list => {
+      list.getEntries().forEach(e => {
+        acc.count++;
+        acc.totalMs += e.duration;
+        if (e.duration > acc.worstMs) acc.worstMs = e.duration;
+      });
+      window._nvLongTasks = acc;
+    }).observe({ entryTypes: ['longtask'] });
+    window._nvLongTasks = acc;   // supported: an empty accumulator means "none yet", not "unavailable"
+  } catch (_) { window._nvLongTasks = null; }
+})();
+
 map.on('rotate', () => {
   _rotLastRotateAt = Date.now();
   _rotFreeze = true;
@@ -1690,7 +1836,15 @@ map.on('rotate', () => {
      this is reached, the freeze cannot outlive the turn that set it. */
   if (_rotThawTid) clearTimeout(_rotThawTid);
   _rotThawTid = setTimeout(() => { _rotThawTid = null; _rotFreeze = false; }, 0);
+  _frameProbeStart('rotate');
 });
+
+/* Every interaction that makes the map render opens a window, so a slow frame can be attributed
+   to what caused it. 'move' covers dragging, panTo and the follow pan; 'zoom' fires through its
+   animation. They overlap on purpose — a pinch is a zoom and a move, and the cause becomes
+   'mixed', which is the honest label for it. */
+map.on('move',  () => _frameProbeStart('move'));
+map.on('zoom',  () => _frameProbeStart('zoom'));
 
 function _wfsLayerAdded(wfsLayer) {
   _wfsCount++;
@@ -2012,6 +2166,259 @@ const _NV_WFS_PAD = 0.1;
    service knowledge rather than as a per-layer setting. */
 const _AE_PARCEL_MIN_Z = 17;
 
+/* ===== SERIAL WFS PARSE QUEUE =====
+   Thirteen layers used to parse and build all at once, and their parses landed on the same main
+   thread within moments of each other: measured on the bench a single 2000-feature reply is
+   ~1700 ms, so the pile-up is the multi-second wall the field session ran into. Parsing one at a
+   time turns the same total into short blocks the app can breathe between — and combined with the
+   chunked build, no single stretch is long enough to read as a freeze.
+
+   ⚠ It is the PARSE that is serialised, never the request. The first version queued _update()
+   itself and was wrong in a way worth recording: the network is not what blocks — it runs off the
+   main thread — so putting requests in a queue added thirteen server round trips end to end where
+   there had been one wait in parallel. On a field connection that trades a freeze for a much
+   longer wait, which for the user is not obviously the better deal. So every layer fires its
+   request immediately, exactly as before, and only the replies line up to be read.
+
+   Order is the legend's, bottom-up: the layer drawn underneath is parsed first, the way a GIS
+   composes a map. It is read from the pane's applied z-index rather than a stored field, because
+   that is the value _applyOverlayZOrder has actually put on screen — a copy of the ordering could
+   disagree with it, the live value cannot.
+
+   ⚠ The queue must never wedge: a job that neither finishes nor fails would strand every reply
+   behind it, which is worse than the pile-up this replaces. Completion is taken from whichever
+   comes first — the wfsupdate a finished build fires, an early return, an error, or a watchdog.
+   The watchdog is not a fallback for a case nobody thought of; it is what makes it unnecessary
+   for that list to be complete. */
+const _WFS_QUEUE_WATCHDOG_MS = 20000;
+const _wfsQueue = [];           // { layer, run }
+let _wfsQueueBusy = null;
+
+function _wfsPaneZ(layer) {
+  try {
+    const el = layer._map && layer.options.pane && layer._map.getPane(layer.options.pane);
+    const z = el && parseInt(el.style.zIndex, 10);
+    return isFinite(z) ? z : 400;
+  } catch (_) { return 400; }
+}
+
+/* Called with a reply already in hand: `run` performs the parse and the build for it. */
+function _wfsEnqueueParse(layer, run) {
+  /* A newer reply for the same layer supersedes an older one still waiting: parsing both would
+     spend main thread building features that the second job is about to replace. */
+  for (let i = _wfsQueue.length - 1; i >= 0; i--) {
+    if (_wfsQueue[i].layer === layer) _wfsQueue.splice(i, 1);
+  }
+  _wfsQueue.push({ layer, run });
+  _wfsQueueUpdate();
+  _wfsPump();
+}
+
+function _wfsPump() {
+  if (_wfsQueueBusy || !_wfsQueue.length) return;
+  /* Sorted at pump time, not at insert: the legend can be reordered while replies wait, and the
+     order that matters is the one in force when a job's turn actually comes. */
+  _wfsQueue.sort((a, b) => _wfsPaneZ(a.layer) - _wfsPaneZ(b.layer));
+  const job = _wfsQueue.shift();
+  // Switched off, or removed from the map, while its reply waited its turn.
+  if (!job || !job.layer || !job.layer._map) { _wfsQueueUpdate(); return void setTimeout(_wfsPump, 0); }
+  const layer = job.layer;
+  _wfsQueueBusy = layer;
+  _wfsCycleBegin();
+  _wfsQueueUpdate();
+
+  let settled = false;
+  /* The count comes from the EVENT, not from a shared global. The first version parked it in
+     window._nvWfsLastCount and read it back here, which is a race between layers by construction:
+     the field report totalled "32 features" while 447 paths were on screen, because whichever
+     layer finished last had overwritten the value for all of them. */
+  const finish = e => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(wd);
+    try { layer.off('wfsupdate', finish); } catch (_) {}
+    layer._queueDone = null;
+    if (e && typeof e.count === 'number') _wfsFeatureTotals.set(layer, e.count);
+    _wfsQueueBusy = null;
+    _wfsQueueUpdate();
+    _wfsCycleMaybeEnd();
+    // Yield before the next one: back-to-back parses would rebuild the wall this exists to avoid.
+    setTimeout(_wfsPump, 0);
+  };
+  const wd = setTimeout(finish, _WFS_QUEUE_WATCHDOG_MS);
+  layer.on('wfsupdate', finish);
+  layer._queueDone = finish;      // read by the render's early returns and by the error paths
+  try { job.run(); } catch (_) { finish(); }
+}
+
+/* What the legend shows while the queue drains. Without it a user watching layers appear one by
+   one has no way to tell "still loading" from "this layer returned nothing" — and a map that
+   looks incomplete but finished is a worse failure than a slow one. */
+function _wfsQueueUpdate() {
+  window._nvWfsQueue = {
+    pending: _wfsQueue.length,
+    current: _wfsQueueBusy ? (_wfsQueueBusy.options.attribution || '') : null,
+    // The layer objects themselves, so the legend can mark its own rows without matching on names.
+    waiting: _wfsQueue.map(j => j.layer),
+    busy: _wfsQueueBusy
+  };
+  try { map.fire('wfsqueue', window._nvWfsQueue); } catch (_) {}
+}
+
+/* ===== "YOU ARE ASKING FOR TOO MUCH" NOTICE =====
+   The advice this gives is the opposite of the obvious one, which is why it has to be given at
+   all. Measurement moved the cost off the drawing path entirely: a pure rotation reads 2.0x the
+   device baseline against a pure pan's 3.0x, so turning is CHEAPER than panning. What costs is
+   parsing WFS replies — ~1700 ms for a 2000-feature answer on a desktop-class CPU — and it is
+   paid again on every move that leaves the fetched box. Told to "switch off overlays", a user
+   switches off basemaps, which are free, and keeps the thirteen cadastral layers that are the
+   whole problem. So the text names WFS layers specifically and says the background maps are fine.
+
+   ⚠ The trigger is the MEASURED duration of a full queue cycle, not a feature count. A count
+   threshold would be a number invented on this machine and shipped to every other one; seconds
+   are what the user experiences, and the same figure means the same thing on any device.
+   It is deliberately NOT silenceable — the condition is not a preference to be dismissed, it is
+   a state that will keep costing until something is switched off. But it carries a cooldown:
+   without one it would fire after every gesture, and an unsilenceable dialog that reappears every
+   few seconds is worse than the slowness it describes. */
+/* This is the one number here that is NOT measured, and it is worth saying so: there is no field
+   sample of a slow cycle to calibrate against, because in the jammed session no cycle ever closed.
+   What IS measured is the healthy case — a refresh of 12 layers and 376 features closes in 0.4 s.
+   So the bar sits at thirty times a normal refresh. It was 5 s and fired on the opening load, which
+   is now excluded outright; between the two changes a false alarm needs a refresh thirty times
+   slower than any yet observed. */
+const _WFS_SLOW_CYCLE_MS = 12000;
+/* The opening load gets its own, far higher bar rather than an exemption. Exempting it outright
+   was the first attempt and it had a hole: the flag that marks the opening load as over is only set
+   when that cycle CLOSES, and in the 16:26 field session no cycle ever closed — so a session that
+   jams from the very first load would have gone through it in silence, which is the original bug
+   back again in the worst case. With a bar instead, a normal opening load stays quiet and a jammed
+   one still speaks up. Not measured either: no clean sample of a healthy opening load exists yet,
+   because the one in the field ran with the dialog blocking the thread for 233 s of it. */
+const _WFS_FIRST_CYCLE_MS = 45000;
+const _WFS_NOTICE_COOLDOWN_MS = 120000;
+let _wfsCycleStart = 0, _wfsLastNotice = 0, _wfsFeatureTotals = new Map();
+let _wfsInFlight = 0;               // requests sent and not yet answered
+let _wfsOverdueTimer = null;        // fires the notice while a cycle is STILL open
+let _wfsFirstCycleDone = false;     // the opening load is expected to be long; it never warns
+
+/* ⚠ The cycle is the wait the USER sits through: first request out, last layer drawn. The first
+   version started it when a PARSE began and ended it when the parse queue emptied, and the field
+   report showed what that measures — "0.0 s (7 layers, 32 features)". With the requests running in
+   parallel their replies arrive spread out, so the parse queue drains between them and the "cycle"
+   was timing one parse in isolation, never the wait. It could not have crossed a 5 s threshold at
+   all, which is why the notice never appeared however long the map took to fill. */
+/* ⚠⚠ And the second field report showed the OPPOSITE failure. Ending the cycle only when nothing
+   is in flight and nothing is queued is correct as a measurement and useless as a trigger: with
+   thirteen layers and a user who keeps panning and turning, every gesture that leaves the fetched
+   box fires thirteen fresh requests, so the quiet moment the cycle waits for never comes. The
+   report logged EIGHT cycles when the bug was "ends too early" and ZERO across three and a half
+   minutes of a jammed map — the notice cannot fire on an event that never happens.
+   So the notice no longer waits for the cycle to close. A watchdog armed when the cycle opens
+   fires it while the jam is still going, which is also when it is worth reading. The cycle's own
+   end still reports the measurement, and still fires the notice for a slow cycle that DID close
+   inside the window. */
+function _wfsCycleBegin() {
+  if (_wfsCycleStart) return;
+  _wfsCycleStart = Date.now();
+  window._nvWfsCycleOpen = _wfsCycleStart;   // read by the diagnostic report
+  clearTimeout(_wfsOverdueTimer);
+  _wfsOverdueTimer = null;
+  /* ⚠ The FIRST cycle of a session is the opening load: every layer is fetched for the first time,
+     and taking several seconds over it is normal rather than a jam. At 5 s it fired exactly there in
+     the field — before the user had touched the map at all, "no map interaction yet this session" —
+     which is the one moment when "switch some overlays off" is both useless and wrong advice. A
+     refresh, by contrast, measured 0.4 s. */
+  _wfsOverdueTimer = setTimeout(() => {
+    if (!_wfsCycleStart) return;                       // closed in the meantime; nothing to say
+    _wfsNotice(Date.now() - _wfsCycleStart, true);
+  }, _wfsFirstCycleDone ? _WFS_SLOW_CYCLE_MS : _WFS_FIRST_CYCLE_MS);
+}
+
+/* One notice, two callers: a cycle that closed slowly, and one still open past the threshold.
+   `open` only changes the tense — the advice is identical, and so is the cooldown that stops an
+   unsilenceable dialog from reappearing every few seconds. */
+function _wfsNotice(took, open) {
+  let feats = 0, layers = 0;
+  _wfsFeatureTotals.forEach(n => { feats += n; layers++; });
+  if (layers < 2) return;
+  if (Date.now() - _wfsLastNotice < _WFS_NOTICE_COOLDOWN_MS) return;
+  // Claimed before the dialog goes up so a second cycle cannot stack a second alert behind it.
+  _wfsLastNotice = Date.now();
+  /* The notice leaves a trace in the report. Without it, whether the dialog appeared at all had to
+     be reconstructed from the shape of a long task — twice, and wrong the first time. A dialog that
+     blocks the main thread while it is up also inflates the long-task figures, so the report is
+     unreadable unless it says which of them was a dialog. */
+  if (typeof nvLog === 'function') {
+    nvLog('notice raised', (took / 1000).toFixed(1) + 's',
+          open ? '(cycle still open)' : '(cycle closed)', 'layers', layers, 'features', feats);
+  }
+  /* ⚠ "overlays", not "cadastral layers". Of the thirteen WFS layers in the field configuration
+     only six are cadastre — the rest are IGM/INSPIRE, contour lines and toponyms among them — so
+     the old wording named the wrong thing to switch off. Deliberately generic: "starting with the
+     heaviest" leaves the choice to the user, who knows which ones are worth keeping, rather than
+     this code guessing on their behalf. */
+  const body =
+    layers + ' overlays are active, with about ' + feats.toLocaleString() + ' features loaded.\n\n' +
+    'Every pan, turn or zoom asks for them again and re-reads them: that ' +
+    (open ? 'is taking over ' : 'took ') + (took / 1000).toFixed(0) + ' seconds' +
+    (open ? ' so far.' : ' this time.') + '\n\n' +
+    'Switch off the overlays you are not using, starting with the heaviest, ' +
+    'or zoom in closer before you move.\n\n' +
+    'Background maps are not the problem — you can leave those on.';
+
+  setTimeout(() => {
+    const shown = Date.now();
+    /* ⚠ The cooldown restarts when the user CLOSES the dialog, not when it was raised. A dialog
+       left open for four minutes had already outlived a cooldown stamped at raise time, so the
+       notice came straight back the moment OK was pressed. */
+    const dismissed = () => {
+      if (typeof nvLog === 'function') {
+        nvLog('notice dismissed', 'after ' + ((Date.now() - shown) / 1000).toFixed(1) + 's');
+      }
+      _wfsLastNotice = Date.now();
+    };
+    if (typeof showNoticeModal === 'function') {
+      showNoticeModal('Overlays are slowing the map', body, dismissed);
+    } else {
+      // Only if utils.js failed to load: better a blocking dialog than a silent one.
+      try { alert(body); } catch (_) {}
+      dismissed();
+    }
+  }, 0);
+}
+
+/* Called wherever a cycle could conclude — a reply parsed, a request that failed. The cycle is over
+   only when nothing is in flight AND nothing is left to parse. */
+function _wfsCycleMaybeEnd() {
+  if (_wfsInFlight > 0 || _wfsQueue.length || _wfsQueueBusy) return;
+  _wfsCycleEnd();
+}
+
+function _wfsCycleEnd() {
+  if (!_wfsCycleStart) return;
+  const took = Date.now() - _wfsCycleStart;
+  _wfsCycleStart = 0;
+  window._nvWfsCycleOpen = 0;
+  clearTimeout(_wfsOverdueTimer);
+  _wfsOverdueTimer = null;
+  let feats = 0, layers = 0;
+  _wfsFeatureTotals.forEach(n => { feats += n; layers++; });
+  if (typeof nvLog === 'function') {
+    nvLog('wfs cycle', (took / 1000).toFixed(1) + 's', 'layers', layers, 'features', feats);
+  }
+  window._nvLastWfsCycle = { ms: took, layers, features: feats };
+  const w = window._nvWorstWfsCycle;
+  if (!w || took > w.ms) window._nvWorstWfsCycle = window._nvLastWfsCycle;
+
+  /* The opening load is measured and reported like any other cycle, and judged against its own
+     higher bar. See the note beside _WFS_FIRST_CYCLE_MS. */
+  const wasFirst = !_wfsFirstCycleDone;
+  _wfsFirstCycleDone = true;
+  if (took < (wasFirst ? _WFS_FIRST_CYCLE_MS : _WFS_SLOW_CYCLE_MS)) return;
+  _wfsNotice(took, false);
+}
+
 const _WFSLayer = L.Layer.extend({
   options: { typeName:'', version:'2.0.0', minZoom:15, opacity:0.8, crs:null,
              filterAttr:'', filterVals:'', color:null, hollow:false, fillOpacity:null, pane:null,
@@ -2301,8 +2708,12 @@ const _WFSLayer = L.Layer.extend({
   _name() { return this.options.attribution ? '"' + this.options.attribution + '"' : 'WFS layer'; },
 
   _update() {
+    /* Every early return below has to release the queue, or the layers behind this one never run.
+       Called through a local alias so the paths that return before any request is built are as
+       explicit about finishing as the ones that succeed. */
+    const _done = () => { const d = this._queueDone; if (d) { this._queueDone = null; d(); } };
     const map = this._map;
-    if (!map) return;
+    if (!map) { _done(); return; }
     if (map.getZoom() < this.options.minZoom) {
       if (this._geo) { try { map.removeLayer(this._geo); } catch(_) {} this._geo = null; }
       const now = Date.now();
@@ -2310,6 +2721,7 @@ const _WFSLayer = L.Layer.extend({
         _reportBelowScale(this._name());
         this._lastZoomWarn = now;
       }
+      _done();
       return;
     }
     /* Recorded when the request is ISSUED, not when it lands, so a second gesture during a slow
@@ -2420,7 +2832,10 @@ const _WFSLayer = L.Layer.extend({
       Object.entries(p).map(([k,v]) => k + '=' + encodeURIComponent(v)).join('&');
 
     const _render = geojson => {
-      if (reqId !== this._reqId) return;
+      /* A superseded response still ends this layer's turn in the queue. onRemove bumps _reqId
+         too, so without this a layer switched off mid-flight would hold the queue until the
+         watchdog fired — twenty seconds of nothing for every layer behind it. */
+      if (reqId !== this._reqId) { _done(); return; }
       this._errShown = false;   // a good response re-arms the latch for the next failure
       // Client-side filter pass for servers that don't support FILTER (Agenzia Entrate cadastral WFS).
       // Applied before the empty-check so the toast distinguishes "no features at all" vs "filtered out".
@@ -2477,7 +2892,7 @@ const _WFSLayer = L.Layer.extend({
       const _hlStyle = _SEL_STYLE;
       try {
         const _wfsPane = self.options.pane || null;
-        this._geo = L.geoJSON(geojson, {
+        const _gjOpts = {
           style: this.options.style,
           pointToLayer: (f, ll) => L.circleMarker(ll, { radius:5, ...self.options.style, ...(_wfsPane ? { pane: _wfsPane } : {}) }),
           onEachFeature: (f, layer) => {
@@ -2557,19 +2972,109 @@ const _WFSLayer = L.Layer.extend({
             // popup right after it opened. Without the pan it stays until the user moves.
             layer.bindPopup(buildPopup, { maxWidth:500, className:'wfs-popup', autoPan:false });
           }
-        }).addTo(map);
-        // Remove old layer; clear stale screen refs for layers that left the viewport
-        if (prev) {
-          try {
-            prev.eachLayer(l => {
-              const k = [..._selLayers.entries()].find(([,v]) => v === l)?.[0];
-              if (k) _selLayers.delete(k);
-            });
-          } catch(_) {}
-          try { map.removeLayer(prev); } catch(_) {}
-        }
-        _selUpdateBadge();
-        try { this.fire('wfsupdate', { count: geojson.features.length }); } catch(_) {}
+        };
+
+        /* ===== CHUNKED BUILD =====
+           Building the whole answer in one L.geoJSON() call is a single synchronous block, and
+           with the ceiling at 1000 features per layer and thirteen layers answering at once that
+           block is what the field session hit: about two minutes during which the browser drew
+           nothing and queued every tap — the compass tap included, which is why it only took
+           effect after the freeze had already passed.
+           Measured on the bench, a 2000-feature reply costs ~1700 ms end to end. Chunking does not
+           make that work smaller — the total is the same or a shade worse for the scheduling — it
+           makes it INTERRUPTIBLE: between chunks the browser paints a frame and collects input,
+           so the map keeps answering while it fills.
+           Features are added nearest-the-centre first, so what fills in first is what the user is
+           looking at. Distance is taken from a feature's FIRST coordinate rather than its true
+           centroid, or even its bounding box: those need a walk over every vertex, which is a
+           second pass of the same order as the parse this exists to break up. For cadastral
+           parcels — small and compact — the two orderings are indistinguishable on screen.
+           ⚠ The previous layer is swapped at the END, exactly as before. Dropping it up front
+           would be simpler and is wrong: the viewport refresh runs about once a second under GPS
+           follow, and the map would blink empty every time. So progressive filling is what the
+           user sees on a layer's FIRST load; a refresh keeps the old features until the new set
+           is complete. */
+        /* The budget caps FEATURES and VERTICES, because the two costs are separate and either
+           one alone can blow a chunk. Measured on the bench: adding to a live L.geoJSON costs
+           ~0.25 ms per feature plus ~0.0027 ms per vertex. So 150 small parcels of 20 vertices
+           build in ~25 ms, while 24 contour lines of 2500 vertices — sixty times FEWER features —
+           take 167 ms. A feature cap alone would have waved that second case through as a single
+           chunk, which is exactly the case the field session hit. Both numbers are set to the same
+           ~50 ms target, the threshold at which the browser itself calls a task long.
+           A feature bigger than the whole budget is still added on its own: a geometry cannot be
+           split, and that is the floor. */
+        const _CHUNK_FEATS = 150;
+        const _CHUNK_VERTS = 18000;
+        /* Counts vertices without walking them: a coordinate array reports its own length, so this
+           recurses over RINGS, not points, and stays O(rings). A true centroid would instead be a
+           second full pass over every vertex — the very cost this mechanism exists to break up. */
+        const _vertsOf = f => {
+          const walk = a => {
+            if (!Array.isArray(a) || !a.length) return 0;
+            if (typeof a[0] === 'number') return 1;                                   // a position
+            if (Array.isArray(a[0]) && typeof a[0][0] === 'number') return a.length;  // a ring
+            let s = 0; for (let i = 0; i < a.length; i++) s += walk(a[i]);
+            return s;
+          };
+          const g = f && f.geometry; if (!g) return 1;
+          if (g.type === 'GeometryCollection') {
+            let s = 0; (g.geometries || []).forEach(x => { s += walk(x && x.coordinates); });
+            return s || 1;
+          }
+          return walk(g.coordinates) || 1;
+        };
+        const _c = map.getCenter();
+        const _firstLL = f => {
+          let g = f && f.geometry; if (!g) return null;
+          if (g.type === 'GeometryCollection') g = g.geometries && g.geometries[0];
+          let a = g && g.coordinates;
+          while (Array.isArray(a) && Array.isArray(a[0])) a = a[0];
+          return (Array.isArray(a) && typeof a[0] === 'number') ? a : null;
+        };
+        const _feats = geojson.features.slice().sort((fa, fb) => {
+          const a = _firstLL(fa), b = _firstLL(fb);
+          if (!a) return b ? 1 : 0;
+          if (!b) return -1;
+          // Squared degrees: monotonic in true distance, and this runs once per feature.
+          const da = (a[0] - _c.lng) ** 2 + (a[1] - _c.lat) ** 2;
+          const db = (b[0] - _c.lng) ** 2 + (b[1] - _c.lat) ** 2;
+          return da - db;
+        });
+
+        const gj = L.geoJSON(null, _gjOpts).addTo(map);
+        this._geo = gj;
+        let _i = 0;
+        const _step = () => {
+          /* The same generation check the response already passes through, repeated per chunk:
+             a build that started for a view the user has since left must not keep spending main
+             thread on it, and must take its half-built layer with it when it goes. */
+          if (reqId !== this._reqId) { try { map.removeLayer(gj); } catch(_) {} return; }
+          let _nf = 0, _nv = 0;
+          while (_i < _feats.length && _nf < _CHUNK_FEATS && _nv < _CHUNK_VERTS) {
+            try { gj.addData(_feats[_i]); } catch(_) {}
+            _nv += _vertsOf(_feats[_i]); _nf++; _i++;
+          }
+          if (_i < _feats.length) { setTimeout(_step, 0); return; }
+
+          // Remove old layer; clear stale screen refs for layers that left the viewport
+          if (prev) {
+            try {
+              /* Walk the SELECTIONS once and ask the outgoing group whether it holds each one,
+                 rather than walking the outgoing group's features and searching the selections for
+                 each. The old form rebuilt the whole entry array once per feature: a thousand
+                 features meant a thousand throwaway arrays, on a path that runs on every pan and for
+                 every layer. Same result — hasLayer tests the same direct membership eachLayer
+                 iterates — in one pass instead of n. */
+              const stale = [];
+              _selLayers.forEach((l, k) => { if (prev.hasLayer(l)) stale.push(k); });
+              stale.forEach(k => _selLayers.delete(k));
+            } catch(_) {}
+            try { map.removeLayer(prev); } catch(_) {}
+          }
+          _selUpdateBadge();
+          try { this.fire('wfsupdate', { count: _feats.length }); } catch(_) {}
+        };
+        _step();
       } catch(_) {}
     };
 
@@ -2690,26 +3195,54 @@ const _WFSLayer = L.Layer.extend({
       this._errShown = true;
       _reportLayerError(this._name(), msg);
       console.warn('[navitron] WFS ' + this._name() + ' failed:', msg, '|', this._wfsUrl);
+      _done();   // a failure ends this layer's turn as surely as a success does
     };
 
+    /* ⚠ Instrumented on purpose, and the reason is worth keeping. A single 8 s block in the field
+       had two candidates that the report could not tell apart: an unchunked parse of a
+       contour-heavy reply, or the notice dialog sitting on screen — a modal holds the main thread
+       and lands in the long-task figures exactly like real work does. The cost model predicted
+       ~8.2 s for 750 contour features against 7987 ms measured, which matched far too well to
+       settle by argument. So a slow parse now names itself: layer, duration, payload size. A
+       wrapper rather than four edits, because _parse returns from four different places and every
+       one of them had to be covered. */
+    const _PARSE_SLOW_MS = 1000;
     const _parse = text => {
+      const _t0 = Date.now();
+      try { _parseTimed(text); }
+      finally {
+        const _ms = Date.now() - _t0;
+        if (_ms >= _PARSE_SLOW_MS && typeof nvLog === 'function') {
+          nvLog('slow parse', this._name(), (_ms / 1000).toFixed(1) + 's',
+                Math.round((text ? text.length : 0) / 1024) + ' KB');
+        }
+      }
+    };
+    const _parseTimed = text => {
       if (reqId !== this._reqId) return;
       // Try JSON first (GeoServer, QGIS Server, etc.)
       try { _render(JSON.parse(text)); return; } catch(_) {}
       // GML fallback: OL parser first (standard GML), then manual DOM parser (MapServer / non-standard NS)
       const swapAxes = geoUrn || (ver >= 2.0 && geoEpsg); // WFS 2.0 geographic CRS returns lat,lon
+      /* writeFeatures() + JSON.parse() used to sit here: the parsed features were serialised to a
+         GeoJSON STRING and immediately parsed back into the objects they had just been. Measured
+         on the bench at 170 ms of the 1706 ms a 2000-feature reply costs — 10%, spent to arrive
+         where the data already was. writeFeaturesObject() returns the object directly and skips
+         both legs. Same OL version, same output shape, one less round trip. */
+      const _olToGeoJson = feats => {
+        const w = new ol.format.GeoJSON();
+        return typeof w.writeFeaturesObject === 'function'
+          ? w.writeFeaturesObject(feats, { featureProjection: 'EPSG:4326' })
+          : JSON.parse(w.writeFeatures(feats, { featureProjection: 'EPSG:4326' }));
+      };
       if (window.ol && ol.format) {
         try {
           const feats = new ol.format.WFS().readFeatures(text, { featureProjection: 'EPSG:4326' });
-          if (feats && feats.length) {
-            _render(JSON.parse(new ol.format.GeoJSON().writeFeatures(feats, { featureProjection: 'EPSG:4326' }))); return;
-          }
+          if (feats && feats.length) { _render(_olToGeoJson(feats)); return; }
         } catch(_) {}
         try {
           const feats = ol.format.GML32 ? new ol.format.GML32().readFeatures(text, { featureProjection: 'EPSG:4326' }) : [];
-          if (feats && feats.length) {
-            _render(JSON.parse(new ol.format.GeoJSON().writeFeatures(feats, { featureProjection: 'EPSG:4326' }))); return;
-          }
+          if (feats && feats.length) { _render(_olToGeoJson(feats)); return; }
         } catch(_) {}
       }
       const geojson = _parseGmlManual(text, swapAxes);
@@ -2725,14 +3258,47 @@ const _WFSLayer = L.Layer.extend({
       } catch(_) { _errOnce(this._name() + ': invalid response'); }
     };
 
+    /* Abort the previous request outright rather than only ignoring its answer. The reqId check
+       already discarded a stale RESPONSE, which is all an image needs — but a WFS reply is text
+       that has to be parsed, and dropping it after the fact means the download completed and the
+       parse ran in full for a view the user had already left. Under GPS follow that is a refresh
+       a second, each one paying up to 1700 ms of main thread for features nobody will see.
+       Only the fetch path can be aborted: cordova.plugin.http has no cancel, so there the reqId
+       check stays the whole defence. That is a real gap and it is the busier path on the device —
+       but the parse guard behind it is the same one, so the worst case is what happens today. */
+    try { if (this._abort) this._abort.abort(); } catch(_) {}
+    this._abort = (typeof AbortController === 'function') ? new AbortController() : null;
+    const _signal = this._abort ? this._abort.signal : undefined;
+    /* The request goes out now, in parallel with every other layer's; only the REPLY waits its
+       turn to be read. A transport failure never enters the queue — there is nothing to parse —
+       so it is reported straight away and holds nobody up. */
+    /* The cycle starts HERE, when the first request goes out — not when a parse begins. This is the
+       moment the user's wait starts. _wfsInFlight is what tells the cycle it is not over yet while
+       replies are still on their way. */
+    _wfsCycleBegin();
+    _wfsInFlight++;
+    let landed = false;
+    const _arrived = () => { if (landed) return; landed = true; _wfsInFlight = Math.max(0, _wfsInFlight - 1); };
     if (window.cordova && cordova.plugin && cordova.plugin.http) {
       cordova.plugin.http.sendRequest(url, { method:'get', responseType:'arraybuffer' },
-        res => _parse(_decodeXmlBuffer(res.data)),
-        () => { if (reqId === this._reqId) _errOnce(this._name() + ': request failed'); }
+        res => { _arrived(); _wfsEnqueueParse(this, () => _parse(_decodeXmlBuffer(res.data))); },
+        () => {
+          _arrived();
+          if (reqId === this._reqId) _errOnce(this._name() + ': request failed');
+          _wfsCycleMaybeEnd();   // a failure can be what completes the cycle
+        }
       );
     } else {
-      fetch(url).then(r => r.arrayBuffer()).then(buf => _parse(_decodeXmlBuffer(buf)))
-        .catch(() => { if (reqId === this._reqId) _errOnce(this._name() + ': request failed'); });
+      fetch(url, { signal: _signal }).then(r => r.arrayBuffer())
+        .then(buf => { _arrived(); _wfsEnqueueParse(this, () => _parse(_decodeXmlBuffer(buf))); })
+        .catch(e => {
+          _arrived();
+          // An abort is this code's own doing, not a failure worth telling the user about.
+          if (e && e.name !== 'AbortError' && reqId === this._reqId) {
+            _errOnce(this._name() + ': request failed');
+          }
+          _wfsCycleMaybeEnd();
+        });
     }
   }
 });

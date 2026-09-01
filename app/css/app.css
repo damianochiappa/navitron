@@ -1844,3 +1844,16 @@ a.polyline-measure-controlOnBgColor:hover {
     text-decoration: none !important;
   }
 }
+
+/* WFS queue state. The requests run one at a time (see the serial queue in map.js), so a row can
+   be loading, waiting its turn, or finished — and a half-filled map must not be mistaken for a
+   finished one that is missing data. Marked on the name rather than the whole row: the row still
+   has to read as a normal, operable legend entry while it waits. */
+.layer-item.wfs-loading .layer-name::after,
+.layer-item.wfs-queued  .layer-name::after { font-size: 10px; opacity: .7; margin-left: 5px; }
+.layer-item.wfs-loading .layer-name::after { content: "loading\2026"; }
+.layer-item.wfs-queued  .layer-name::after { content: "queued"; opacity: .45; }
+/* The pulse says "moving", which a static word cannot: a queue that has silently wedged looks
+   identical to one that is simply slow, and this is the difference the user can see. */
+.layer-item.wfs-loading .layer-name { animation: wfs-pulse 1.2s ease-in-out infinite; }
+@keyframes wfs-pulse { 0%,100% { opacity: 1; } 50% { opacity: .55; } }

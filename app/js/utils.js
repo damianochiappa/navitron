@@ -259,6 +259,45 @@ function _xmlEsc(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
+/* A one-button notice drawn by the PAGE, not by the system. Deliberately not alert()/confirm():
+   both hold the main thread for as long as they are on screen, and that costs twice over here.
+   Once because replies keep arriving while the thread is held and cannot be read, so the worst
+   moment is not while the dialog is up but right after it is dismissed, when the backlog lands all
+   at once. And once because a held thread is counted as a long task, which corrupts the very
+   section of the report used to diagnose the slowness the dialog is reporting — three field
+   sessions measured 233 s, 8 s and 5.7 s of "blocked" time that was the dialog itself.
+   The cache-full prompt keeps confirm() on purpose: it asks a real question, fires at most once
+   every five minutes and only above 90% of quota, and the user is stopping to decide anyway.
+   ⚠ No backdrop-click and no Escape: the condition is a state that keeps costing until something
+   is switched off, not a preference to be waved away. One button, and it has to be pressed. */
+function showNoticeModal(title, body, onDismiss) {
+  let modal = document.getElementById('notice-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'notice-modal';
+    modal.className = 'modal-backdrop';
+    modal.innerHTML =
+      '<div class="modal-box">' +
+        '<h3 id="notice-modal-title"></h3>' +
+        '<p class="modal-desc" id="notice-modal-body" style="white-space:pre-line"></p>' +
+        '<div class="modal-btns">' +
+          '<button class="btn btn-primary" id="notice-modal-ok">Got it</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(modal);
+    // Attached once, on an element that is never destroyed — so there is nothing to remove later.
+    document.getElementById('notice-modal-ok').addEventListener('click', () => {
+      modal.style.display = 'none';
+      const cb = modal._cb; modal._cb = null;
+      if (cb) { try { cb(); } catch (_) {} }
+    });
+  }
+  document.getElementById('notice-modal-title').textContent = title;
+  document.getElementById('notice-modal-body').textContent = body;
+  modal._cb = onDismiss;
+  modal.style.display = 'flex';
+}
+
 function showPromptModal(message, defaultValue, onConfirm, hint) {
   let modal = document.getElementById('prompt-modal');
   if (!modal) {
@@ -1029,6 +1068,79 @@ async function buildDiagReport() {
     kv('Zoom', map.getZoom());
     kv('Bearing', (typeof map.getBearing === 'function' ? map.getBearing() + '°' : 'n/a'));
   } catch (_) { kv('Map', 'not initialised'); }
+
+  /* ---- responsiveness: the numbers a future "the app is slowing down" notice would use ---- */
+  /* Two independent instruments on purpose. The frame probe times what the user feels while the
+     map renders; the long-task observer sees blocks nobody gestured for. If they ever disagree,
+     that disagreement is itself the finding — which is why neither is dropped for being
+     redundant. Both are reported next to WHAT caused them, so "rotation is to blame" stays a
+     claim this file can contradict.
+     In its own try: a failure here must not make the Map section above print "not initialised"
+     about a map that is running perfectly well. */
+  sec('Performance');
+  try {
+    const f = window._nvLastFrame;
+    if (f) {
+      const fBase = parseFloat(localStorage.getItem(window._nvFrameProbeBaseKey || 'nv_frame_base'));
+      kv('Frame time (med)', f.ms.toFixed(1) + ' ms  (' + f.cause + ', ' + f.frames + ' frames)');
+      kv('Best ever on device', isFinite(fBase) ? fBase.toFixed(1) + ' ms' : 'not recorded yet');
+      kv('Slowdown vs best', f.ratio.toFixed(1) + ' x');
+      kv('Vector paths', f.paths >= 0 ? f.paths : 'not counted');
+      /* Markers sit next to paths because the bearing freeze does not reach them: leaflet-rotate
+         subscribes every Marker to the rotate event, so they update on every degree while the
+         paths stay frozen. If a turn costs more than a pan over the same view, this is the first
+         number to look at. */
+      kv('Markers', f.markers >= 0 ? f.markers : 'not counted');
+      /* The report is saved minutes after the trouble, by which time the last window is usually
+         the menu opening. The worst one is the reason the user is sending the file at all. */
+      const w = window._nvWorstFrame;
+      if (w && w !== f) {
+        kv('Worst this session', w.ms.toFixed(1) + ' ms  (' + w.cause + ', ' +
+                                 w.ratio.toFixed(1) + ' x, ' + w.paths + ' paths)');
+      }
+    } else {
+      kv('Frame time', 'no map interaction yet this session');
+    }
+  } catch (_) { kv('Frame time', 'unavailable'); }
+  /* The WFS refresh cycle — the wait between a gesture and a complete map, and the number the
+     "too many layers" notice is thresholded on. Reported next to the frame times because the two
+     answer different questions: the frame probe says whether drawing is smooth, this says how long
+     the map stays incomplete, and a session can be bad at one and fine at the other. */
+  try {
+    const c = window._nvLastWfsCycle, cw = window._nvWorstWfsCycle;
+    const openSince = window._nvWfsCycleOpen;
+    /* A cycle still running when the report is taken gets its own line. Without it the report read
+       "no WFS refresh yet this session" on a map that had been fetching for three and a half
+       minutes — true to the letter and the opposite of useful, because a cycle that never closes
+       is never measured. An open cycle is the single most telling line on a jammed session. */
+    if (openSince) {
+      kv('WFS cycle in progress', ((Date.now() - openSince) / 1000).toFixed(1) + ' s and still open');
+    }
+    if (c) {
+      kv('WFS refresh cycle', (c.ms / 1000).toFixed(1) + ' s  (' + c.layers + ' layers, ' +
+                              c.features.toLocaleString() + ' features)');
+      if (cw && cw !== c) {
+        kv('Worst cycle', (cw.ms / 1000).toFixed(1) + ' s  (' + cw.layers + ' layers, ' +
+                          cw.features.toLocaleString() + ' features)');
+      }
+    } else {
+      kv('WFS refresh cycle', openSince ? 'none completed this session'
+                                        : 'no WFS refresh yet this session');
+    }
+  } catch (_) { kv('WFS refresh cycle', 'unavailable'); }
+  try {
+    const lt = window._nvLongTasks;
+    if (!lt) {
+      /* Stated, not silently omitted: a missing row would be read as "no long tasks", which is
+         the opposite of what an unavailable API means. */
+      kv('Long tasks', 'PerformanceObserver longtask not available in this WebView');
+    } else if (!lt.count) {
+      kv('Long tasks', 'none over 50 ms since launch');
+    } else {
+      kv('Long tasks', lt.count + '  (worst ' + lt.worstMs.toFixed(0) + ' ms, ' +
+                       (lt.totalMs / 1000).toFixed(1) + ' s blocked in total)');
+    }
+  } catch (_) { kv('Long tasks', 'unavailable'); }
 
   // Name each layer by its attribution — that is what the app already sets to the
   // layer's own name. Long ones are provider credits (basemaps): truncate rather
