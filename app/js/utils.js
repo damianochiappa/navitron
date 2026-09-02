@@ -1116,12 +1116,26 @@ async function buildDiagReport() {
     if (openSince) {
       kv('WFS cycle in progress', ((Date.now() - openSince) / 1000).toFixed(1) + ' s and still open');
     }
+    /* ⚠ The reading share is the line that says WHERE the wait went, and it is here because
+       reading it off the total was guesswork: a 63.7 s cycle carrying 346 features was taken for a
+       slow app until the arithmetic showed the parse could only have been a few hundred
+       milliseconds of it. Printed as a share because the absolute number means nothing without the
+       wall time beside it — 0.3 s is fine inside 1 s and an idle app inside 45.
+       ⚠ "reading", never "CPU": the span includes the yields between build chunks and the paint in
+       them, so it exceeds blocked main-thread time and was seen to (40.9 s against 22.4 s of long
+       tasks in one session). It measures the app working, not the thread being held. */
+    /* A stalled span is named separately and never rolled into the share: it is the one part of a
+       cycle whose cost has no explanation, and averaging it away is how it stayed invisible. */
+    const share = x => (x && x.ms > 0 && typeof x.readMs === 'number')
+      ? ', ' + (x.readMs / 1000).toFixed(1) + ' s reading = ' + Math.round(100 * x.readMs / x.ms) + '%'
+        + (x.stalledMs ? ', ' + (x.stalledMs / 1000).toFixed(1) + ' s STALLED' : '')
+      : '';
     if (c) {
       kv('WFS refresh cycle', (c.ms / 1000).toFixed(1) + ' s  (' + c.layers + ' layers, ' +
-                              c.features.toLocaleString() + ' features)');
+                              c.features.toLocaleString() + ' features' + share(c) + ')');
       if (cw && cw !== c) {
         kv('Worst cycle', (cw.ms / 1000).toFixed(1) + ' s  (' + cw.layers + ' layers, ' +
-                          cw.features.toLocaleString() + ' features)');
+                          cw.features.toLocaleString() + ' features' + share(cw) + ')');
       }
     } else {
       kv('WFS refresh cycle', openSince ? 'none completed this session'

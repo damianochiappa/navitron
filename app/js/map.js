@@ -1852,6 +1852,13 @@ function _wfsLayerAdded(wfsLayer) {
   _selUpdateBadge();
 }
 function _wfsLayerRemoved(wfsLayer) {
+  /* FIRST, before anything that can throw. Its feature count goes with the layer: without this the
+     map only ever grows in the eyes of the notice — the `layers < 2` gate stays true for the rest
+     of the session once two WFS layers have loaded even once, and the figures the text quotes count
+     layers the user has already switched off, so the dialog names a load that is no longer there.
+     Ordered ahead of the z-order and selection work below because a throw in any of those would
+     leak the count and reinstate exactly the defect this closes. */
+  _wfsFeatureTotals.delete(wfsLayer);
   _wfsCount = Math.max(0, _wfsCount - 1);
   const idx = _wfsRegistry.findIndex(e => e.layer === wfsLayer);
   if (idx !== -1) _wfsRegistry.splice(idx, 1);
@@ -2224,6 +2231,7 @@ function _wfsPump() {
   if (!job || !job.layer || !job.layer._map) { _wfsQueueUpdate(); return void setTimeout(_wfsPump, 0); }
   const layer = job.layer;
   _wfsQueueBusy = layer;
+  _wfsQueueBusySince = Date.now();
   _wfsCycleBegin();
   _wfsQueueUpdate();
 
@@ -2232,20 +2240,38 @@ function _wfsPump() {
      window._nvWfsLastCount and read it back here, which is a race between layers by construction:
      the field report totalled "32 features" while 447 paths were on screen, because whichever
      layer finished last had overwritten the value for all of them. */
-  const finish = e => {
+  const finish = (e, byWatchdog) => {
     if (settled) return;
     settled = true;
     clearTimeout(wd);
     try { layer.off('wfsupdate', finish); } catch (_) {}
     layer._queueDone = null;
     if (e && typeof e.count === 'number') _wfsFeatureTotals.set(layer, e.count);
+    /* Split, not summed: a span the watchdog had to end is time we cannot describe, and folding it
+       into reading made the notice blame the parse for a queue that was simply stuck. */
+    if (_wfsQueueBusySince) {
+      const _held = Math.max(0, Date.now() - _wfsQueueBusySince);
+      if (byWatchdog) _wfsStalledMs += _held; else _wfsReadMs += _held;
+    }
+    _wfsQueueBusySince = 0;
     _wfsQueueBusy = null;
     _wfsQueueUpdate();
     _wfsCycleMaybeEnd();
     // Yield before the next one: back-to-back parses would rebuild the wall this exists to avoid.
     setTimeout(_wfsPump, 0);
   };
-  const wd = setTimeout(finish, _WFS_QUEUE_WATCHDOG_MS);
+  /* ⚠ The watchdog used to close a job in silence, and that silence cost a diagnosis: a cycle
+     reporting 40.9 s of reading for 265 features had two readings — a genuinely long chunked build,
+     or two jobs abandoned at 20 s each, which comes to almost exactly the same number — and the
+     report could not tell them apart. A job closed here is not a normal ending: the build it gave
+     up on keeps running on its own setTimeout chain, so it says so by name. */
+  const wd = setTimeout(() => {
+    if (typeof nvLog === 'function') {
+      nvLog('queue watchdog', layer.options.attribution || layer.options.typeName || '?',
+            'closed after ' + (_WFS_QUEUE_WATCHDOG_MS / 1000).toFixed(0) + 's');
+    }
+    finish(undefined, true);
+  }, _WFS_QUEUE_WATCHDOG_MS);
   layer.on('wfsupdate', finish);
   layer._queueDone = finish;      // read by the render's early returns and by the error paths
   try { job.run(); } catch (_) { finish(); }
@@ -2274,6 +2300,18 @@ function _wfsQueueUpdate() {
    switches off basemaps, which are free, and keeps the thirteen cadastral layers that are the
    whole problem. So the text names WFS layers specifically and says the background maps are fine.
 
+   ⚠ The text nevertheless offers to lock north, which reads like a contradiction of the paragraph
+   above and is not one: the 2.0x/3.0x figures are FRAME TIME, and rotation is not named here for
+   being slow to draw. It is named for memory. The SVG holds pixels, not coordinates, so every
+   degree rewrites the `d` of every path — with thousands of vector features that is the shape of
+   the 2.1 GB session reproduced on 2026-08-31 (many WFS over Rome, plus rotation). Frame time and
+   footprint are two different costs and only the second one is at stake in this dialog.
+   The line is therefore conditional on the map being ACTUALLY turned, not on free rotation being
+   unlocked: someone sitting at north pays nothing, whatever the compass allows. And it is only
+   ever read outside navigation — see the hold in _wfsNotice — which matters, because navigation
+   turns the map track-up whatever the rotation lock says. There, north is not the user's to give
+   back, and the advice would be one they cannot act on.
+
    ⚠ The trigger is the MEASURED duration of a full queue cycle, not a feature count. A count
    threshold would be a number invented on this machine and shipped to every other one; seconds
    are what the user experiences, and the same figure means the same thing on any device.
@@ -2301,6 +2339,33 @@ let _wfsCycleStart = 0, _wfsLastNotice = 0, _wfsFeatureTotals = new Map();
 let _wfsInFlight = 0;               // requests sent and not yet answered
 let _wfsOverdueTimer = null;        // fires the notice while a cycle is STILL open
 let _wfsFirstCycleDone = false;     // the opening load is expected to be long; it never warns
+let _wfsNoticeHeld = false;         // this cycle was already reported as held; do not log it again
+/* Replies that have LANDED in this cycle, whatever their content. Not derivable from _wfsInFlight:
+   twelve layers answered and one still outstanding leaves the same "in flight > 0, nothing to
+   parse" state as twelve seconds of total silence, and only the second of those is a saturated
+   connection. The notice says which one it is, so it has to be able to tell them apart. */
+let _wfsArrivedThisCycle = 0;
+/* How long this cycle spent turning replies into map, against the wall time the user waited.
+   Counting replies was the first attempt and the field killed it on its first firing: 2026-09-02,
+   45 s into an opening load, FOUR of six layers had answered and two had not, so a majority test
+   read "most replies are in, therefore the reading is the problem" — while the four answers
+   together carried THREE features and the parse had cost under a millisecond. How many replies
+   came back says nothing about where the time went; only the clock does.
+   ⚠ This is queue OCCUPANCY, not main-thread time, and the difference is not pedantry: the build
+   is chunked with a setTimeout(0) between chunks, so the span from job start to `wfsupdate`
+   includes those yields and the paint that happens in them. A field report on the same day made
+   the gap visible by arithmetic — 40.9 s claimed inside a session whose long tasks totalled
+   22.4 s of blocked thread. It is still the right quantity to weigh against waiting for the
+   network, because the yields and the paint are the app's own work; it is simply not "CPU", and
+   nothing here or in the report may call it that. */
+let _wfsReadMs = 0;           // accumulated across the cycle, jobs that have finished
+let _wfsQueueBusySince = 0;   // start stamp of the job running right now, 0 when idle
+/* Time held by jobs the WATCHDOG had to close, kept apart from reading rather than folded into it.
+   When the watchdog fires we do not know what that span was — a genuinely long build or a job that
+   said nothing — so calling it "reading" asserts something unmeasured. It also has to suppress the
+   network verdict: a wedged queue is neither a slow pipe nor a busy one, and 2026-09-02 12:10
+   showed the notice reporting 86% reading for a span in which nothing was being read. */
+let _wfsStalledMs = 0;
 
 /* ⚠ The cycle is the wait the USER sits through: first request out, last layer drawn. The first
    version started it when a PARSE began and ended it when the parse queue emptied, and the field
@@ -2321,6 +2386,13 @@ let _wfsFirstCycleDone = false;     // the opening load is expected to be long; 
 function _wfsCycleBegin() {
   if (_wfsCycleStart) return;
   _wfsCycleStart = Date.now();
+  _wfsNoticeHeld = false;                    // a new cycle may report its own hold once
+  _wfsArrivedThisCycle = 0;
+  /* Safe to zero here and only here: this runs when no cycle is open, which is also the one state
+     in which nothing can be mid-parse — the cycle does not close while the queue is busy. */
+  _wfsReadMs = 0;
+  _wfsStalledMs = 0;
+  _wfsQueueBusySince = 0;
   window._nvWfsCycleOpen = _wfsCycleStart;   // read by the diagnostic report
   clearTimeout(_wfsOverdueTimer);
   _wfsOverdueTimer = null;
@@ -2335,6 +2407,38 @@ function _wfsCycleBegin() {
   }, _wfsFirstCycleDone ? _WFS_SLOW_CYCLE_MS : _WFS_FIRST_CYCLE_MS);
 }
 
+/* Is the map turned right now? Asked instead of "has the user unlocked free rotation", which is
+   the state the compass keeps to itself: the cost is paid per degree redrawn, so a map sitting at
+   north pays nothing however the compass is set. Bearing is enough to tell the two apart because
+   the compass forces it back to 0 whenever rotation is locked and navigation is off, and this is
+   only ever read outside navigation. Guarded: without leaflet-rotate there is no getBearing.
+   Any non-zero bearing counts, with no tolerance band: a fraction of a degree is still a bearing
+   the paths were rewritten for, and it is the same plain truth test the rest of this file uses
+   (map.js _paddedBounds, _screenPolygon, _rotatedSnapshot all read `!map.getBearing()`). */
+function _mapIsTurned() {
+  try {
+    return typeof map.getBearing === 'function' && !!map.getBearing();
+  } catch (_) { return false; }
+}
+
+/* The states in which a dialog must not take the screen. Navigation is the user's own doing;
+   flight is detected, not chosen (_flightState, set from a run of fixes above the MSL threshold),
+   and in both the advice is one the reader cannot act on where they are. Read through a guard
+   each: navigation.js may not have loaded, and _flightState is plain module state.
+   ⚠ Offline belongs here rather than as an early return, so it inherits what this branch already
+   does right: logged once, watchdog re-armed, cooldown not spent. "You are asking for too much" is
+   a question about load, and with no network there is no load to be asking too much of — the wait
+   is not a threshold matter. Unreachability is reported on its own channel: _reportLayerError is
+   built with no `kind` precisely so every failure episode speaks, so nothing is hidden by holding
+   here. Compared against `false` and not negated: on older WebViews the property can be undefined,
+   and an unknown state must keep today's behaviour rather than fall silent. */
+function _wfsNoticeMustHold() {
+  if (typeof navIsActive === 'function') { try { if (navIsActive()) return 'navigation'; } catch (_) {} }
+  try { if (_flightState) return 'flight'; } catch (_) {}
+  try { if (navigator.onLine === false) return 'offline'; } catch (_) {}
+  return '';
+}
+
 /* One notice, two callers: a cycle that closed slowly, and one still open past the threshold.
    `open` only changes the tense — the advice is identical, and so is the cooldown that stops an
    unsilenceable dialog from reappearing every few seconds. */
@@ -2343,29 +2447,189 @@ function _wfsNotice(took, open) {
   _wfsFeatureTotals.forEach(n => { feats += n; layers++; });
   if (layers < 2) return;
   if (Date.now() - _wfsLastNotice < _WFS_NOTICE_COOLDOWN_MS) return;
+  /* ⚠ Never over a map someone is navigating by, or flying with. The dialog is unsilenceable by
+     design and wants a tap, which is the one thing a rider or a driver cannot give it — and its
+     advice is not actionable there either: nobody re-picks overlays at 50 km/h, and the map is
+     track-up whatever the rotation lock says. So while either state holds, the condition is
+     recorded and the dialog is withheld, not cancelled: the watchdog is re-armed so it is
+     delivered at the first stop rather than lost with the cycle it belonged to.
+     ⚠ The cooldown stamp is deliberately NOT taken here. Stamping it would spend the 120 s on a
+     dialog nobody saw, and the stop that follows would be silent for two minutes — exactly the
+     moment the notice is worth reading.
+     The report line is written once per cycle: re-arming every 12 s for a whole ride would fill
+     the section of the report used to diagnose the very slowness this reports. */
+  const _hold = _wfsNoticeMustHold();
+  if (_hold) {
+    if (!_wfsNoticeHeld && typeof nvLog === 'function') {
+      nvLog('notice held', _hold + ' active', (took / 1000).toFixed(1) + 's',
+            'layers', layers, 'features', feats);
+    }
+    _wfsNoticeHeld = true;
+    if (open && _wfsCycleStart) {
+      clearTimeout(_wfsOverdueTimer);
+      _wfsOverdueTimer = setTimeout(() => {
+        if (!_wfsCycleStart) return;
+        _wfsNotice(Date.now() - _wfsCycleStart, true);
+      }, _WFS_SLOW_CYCLE_MS);
+    }
+    return;
+  }
+  /* ===== NOTHING WORTH SAYING =====
+     ⚠ A wait that is about to end on its own must not raise an unsilenceable dialog. Measured in
+     Rome on 2026-09-02 13:24: the notice fired at 12.0 s with SEVENTEEN of eighteen replies
+     already in and reading at 19% of the wait — and the cycle closed by itself six seconds later.
+     What it put on screen was "6 overlays are active, with about 58 features loaded, switch some
+     off": advice that is useless (the reading was not the cost), unactionable (one server was
+     thinking, not the app) and wrong about the map it described.
+     The condition this notice exists for is one that KEEPS costing until something is switched
+     off. A straggler is not that condition: it resolves whether or not the user does anything.
+     ⚠ Withheld, not cancelled — the same treatment navigation gets, for the same reason. The
+     watchdog is re-armed, so if the picture worsens (more requests going out, the reading share
+     climbing, replies piling up unread) the notice still arrives within a window. And the cooldown
+     is not stamped, so a genuine jam a moment later is not muted by a dialog nobody saw.
+     ⚠ A THIRD, not a fifth, and the number was chosen from the measured distribution rather than
+     argued. Across the 2026-09-02 stress session the reading shares of the cycles were
+     0, 8, 17, 20, 22, 23, 25, 28, 36, 39, 44, 46 per cent — with an empty band between 28 and 36.
+     A third falls inside that gap, so no observed cycle sits near the boundary: the stragglers at
+     19% (Rome) and 28% (stress) go quiet, and the cycles where the app really was the cost keep
+     speaking. A fifth was set from one point and let the 28% case through, which then told a user
+     with 64 features loaded to switch overlays off.
+     ⚠ The fifth is deliberately KEPT for _starved below, and the asymmetry is the point: this
+     branch withholds a message, that one asserts a cause. Claiming "the connection is saturated"
+     needs the stricter evidence; staying quiet does not.
+     ⚠ The two branches cannot both apply: this one needs fewer than a quarter of the requests
+     outstanding, _starved needs a quarter or more. Mutually exclusive by construction, so their
+     order here carries no meaning.
+     ⚠ And a server that is genuinely UNREACHABLE is not this notice's job at all — it is not a
+     threshold question, it is a transport one. The failure callback reports it through
+     _reportLayerError, an error toast built with no `kind` precisely so that every failure episode
+     speaks (see the note beside it). So withholding here cannot hide a dead endpoint: the two
+     channels answer different questions, and only one of them is about how long a wait is. */
+  const _backA = _wfsArrivedThisCycle, _outA = _wfsInFlight, _askedA = _backA + _outA;
+  const _readA = _wfsReadMs + (_wfsQueueBusySince ? Math.max(0, Date.now() - _wfsQueueBusySince) : 0);
+  /* ⚠ TWO shapes of one thing: the wait was not made of this app. Requiring an OPEN cycle was a
+     defect, measured the same evening it shipped — 2026-09-02 14:13, a cycle held correctly at
+     12 s ("nearly done", 35 of 36 replies in) closed 52 seconds later and the notice came out
+     through the other door anyway, saying "11 overlays, 532 features, switch some off" for a
+     63.9 s wait of which the reading was 1.4 s. TWO POINT TWO PER CENT.
+     On a closed cycle the counting terms are meaningless — everything arrived, so `_out` is 0 and
+     the quarter rule has nothing to divide. The reading share is the whole discriminator there,
+     and by then the wait is over: a dialog that cannot be dismissed, raised after the condition
+     has already ended, has nothing to offer. The user left that one on screen for 190 seconds.
+     ⚠ The same third for both, deliberately: it is one question ("was the reading the cost?"), and
+     two different fractions for one question would be arbitrary. At 30% of a 64 s cycle the app
+     really did spend twenty seconds, and it still speaks. */
+  const _quiet = !_wfsQueue.length && !_wfsStalledMs && _readA * 3 < took;
+  /* ⚠ ONE silent server is a straggler whatever the denominator, and that is the second term.
+     Measured 2026-09-02 14:50: a refresh of only TWO layers, one answered and one did not, and the
+     quarter rule passed trivially (4 >= 2) — so a single slow endpoint was announced as "the
+     connection is saturated" while the map held 1029 features and the wait resolved itself in
+     19.6 s. On a small cycle any outstanding request clears a quarter, so the rule alone cannot
+     evidence a LINK; it takes at least two servers gone quiet to say something about the pipe. */
+  const _straggler = open && _outA > 0 && (_outA * 4 < _askedA || _outA < 2);  // ends on its own
+  const _alreadyOver = !open;                                   // has ended, and it was not us
+  const _nearlyDone = _quiet && (_straggler || _alreadyOver);
+  if (_nearlyDone) {
+    if (!_wfsNoticeHeld && typeof nvLog === 'function') {
+      nvLog('notice held', _straggler ? 'nearly done' : 'wait was not the app',
+            (took / 1000).toFixed(1) + 's',
+            'read ' + _readA + 'ms', 'replies ' + _backA + '/' + _askedA);
+    }
+    _wfsNoticeHeld = true;
+    if (_wfsCycleStart) {
+      clearTimeout(_wfsOverdueTimer);
+      _wfsOverdueTimer = setTimeout(() => {
+        if (!_wfsCycleStart) return;
+        _wfsNotice(Date.now() - _wfsCycleStart, true);
+      }, _WFS_SLOW_CYCLE_MS);
+    }
+    return;
+  }
   // Claimed before the dialog goes up so a second cycle cannot stack a second alert behind it.
   _wfsLastNotice = Date.now();
+  /* ⚠ The trigger cannot, on its own, tell a jammed CPU from a jammed pipe: the cycle clock starts
+     when the REQUEST goes out (see the note beside _wfsCycleBegin's caller), so it counts the
+     network round trip too, and twelve seconds of a bad link cross the bar with the CPU idle. The
+     old text blamed the parse either way — "asks for them again and re-reads them" — which is the
+     one cost not being paid in that case.
+     Starved is decided on the CLOCK, not on a reply count. Counting was tried and the field broke
+     it on the first firing this notice ever had: 45 s into an opening load, four of six layers had
+     answered and two had not, which any majority test reads as "the replies are in, so the cost is
+     the reading" — while those four replies carried three features between them and the parse had
+     cost under a millisecond. The wait was the two servers that had not answered.
+     So: replies still outstanding, nothing piled up waiting to be read, and the reading accounted
+     for less than a fifth of the wait. The fifth is a judgement, and the one measured point sits
+     nowhere near it — that session read for 0.3 s inside 45 s of waiting, under 1%.
+     The `!_wfsQueue.length` term is what keeps a parse pile-up from being called a network fault:
+     replies queued and unread are the CPU's backlog, not the pipe's silence.
+     ⚠ And the last term keeps a STRAGGLER from being called a saturated link. Twelve answers with
+     one server still thinking leaves the CPU just as idle as total silence does, so the clock test
+     alone would call it a saturated connection — a sentence that is simply untrue when twelve
+     replies out of thirteen are already in. A quarter of the requests still outstanding is the
+     line, and the field case sits well clear of it: two of six, against one of thirteen for the
+     straggler it is there to exclude.
+     ⚠ The sentence reports the real arrival count rather than claiming nothing came back, because
+     partial arrivals now reach this branch. A message that overstates its own evidence is the
+     thing the branch exists to avoid.
+     ⚠ Being offline does not reach here: a transport failure calls _arrived() like any reply, so
+     the cycle closes in a fraction of a second and never crosses the bar. What reaches here is a
+     link that accepts the connection and then says nothing. */
+  const _back = _wfsArrivedThisCycle, _out = _wfsInFlight, _asked = _back + _out;
+  const _readMs = _wfsReadMs + (_wfsQueueBusySince ? Math.max(0, Date.now() - _wfsQueueBusySince) : 0);
+  /* ⚠ `!_wfsStalledMs` last: if the watchdog had to close anything this cycle, the wait has a third
+     explanation that is neither pipe nor parse, and the honest answer is not to name a cause. */
+  const _starved = open && _out > 0 && !_wfsQueue.length && !_wfsStalledMs
+                   && _readMs * 5 < took && _out * 4 >= _asked;
   /* The notice leaves a trace in the report. Without it, whether the dialog appeared at all had to
      be reconstructed from the shape of a long task — twice, and wrong the first time. A dialog that
      blocks the main thread while it is up also inflates the long-task figures, so the report is
-     unreadable unless it says which of them was a dialog. */
+     unreadable unless it says which of them was a dialog. Which of the two things it blamed is
+     logged too: the report is where a wrong diagnosis would be caught. */
   if (typeof nvLog === 'function') {
     nvLog('notice raised', (took / 1000).toFixed(1) + 's',
-          open ? '(cycle still open)' : '(cycle closed)', 'layers', layers, 'features', feats);
+          open ? '(cycle still open)' : '(cycle closed)',
+          _starved ? 'network' : 'parse',
+          'read ' + _readMs + 'ms of ' + Math.round(took) + 'ms',
+          _wfsStalledMs ? 'STALLED ' + _wfsStalledMs + 'ms' : '',
+          'replies ' + _back + '/' + _asked,
+          'layers', layers, 'features', feats);
   }
   /* ⚠ "overlays", not "cadastral layers". Of the thirteen WFS layers in the field configuration
      only six are cadastre — the rest are IGM/INSPIRE, contour lines and toponyms among them — so
      the old wording named the wrong thing to switch off. Deliberately generic: "starting with the
      heaviest" leaves the choice to the user, who knows which ones are worth keeping, rather than
      this code guessing on their behalf. */
-  const body =
-    layers + ' overlays are active, with about ' + feats.toLocaleString() + ' features loaded.\n\n' +
-    'Every pan, turn or zoom asks for them again and re-reads them: that ' +
-    (open ? 'is taking over ' : 'took ') + (took / 1000).toFixed(0) + ' seconds' +
-    (open ? ' so far.' : ' this time.') + '\n\n' +
-    'Switch off the overlays you are not using, starting with the heaviest, ' +
-    'or zoom in closer before you move.\n\n' +
-    'Background maps are not the problem — you can leave those on.';
+  /* ⚠ "Background maps are not the problem" is dropped on the starved branch, and deliberately:
+     it is true of the CPU and false of the pipe, where tile requests compete for the same
+     bandwidth as the overlays. Same for the rotation line — nothing is being redrawn while
+     nothing is arriving. */
+  const body = _starved
+    /* ⚠ ONE denominator per message. This branch used to open with "N overlays are active, with
+       about M features loaded" — the count of everything on the map — and then talk about the
+       requests of this cycle, so a field report showed "11 overlays … only 1 of 2 requests has
+       come back". Eleven and two in the same paragraph, and nothing to reconcile them with. The
+       layers-and-features opening belongs to the parse branch, where the whole map IS the subject;
+       here the subject is the refresh that is late, so it counts only that. */
+    ? 'The connection is saturated: of the ' + _asked + ' overlays being refreshed, ' +
+      (_back === 0
+        ? 'none has answered'
+        : 'only ' + _back + ' ' + (_back === 1 ? 'has' : 'have') + ' answered') +
+      ' after ' + (took / 1000).toFixed(0) + ' seconds.\n\n' +
+      'Reduce the active overlays and check that your connection is good.'
+    : layers + ' overlays are active, with about ' + feats.toLocaleString() + ' features loaded.\n\n' +
+      'Every pan, turn or zoom asks for them again and re-reads them: that ' +
+      (open ? 'is taking over ' : 'took ') + (took / 1000).toFixed(0) + ' seconds' +
+      (open ? ' so far.' : ' this time.') + '\n\n' +
+      'Switch off the overlays you are not using, starting with the heaviest, ' +
+      'or zoom in closer before you move.\n\n' +
+      /* Only when the map is actually turned. See the note at the head of this section for why
+         rotation is named at all when it is the cheaper gesture to draw: what it costs here is
+         memory, not frame time. */
+      (_mapIsTurned()
+        ? 'The map is also turned. If you do not need it that way, tap the compass to lock north: ' +
+          'with this many features every turn redraws all of them.\n\n'
+        : '') +
+      'Background maps are not the problem — you can leave those on.';
 
   setTimeout(() => {
     const shown = Date.now();
@@ -2379,7 +2643,8 @@ function _wfsNotice(took, open) {
       _wfsLastNotice = Date.now();
     };
     if (typeof showNoticeModal === 'function') {
-      showNoticeModal('Overlays are slowing the map', body, dismissed);
+      showNoticeModal(_starved ? 'The map is waiting for data' : 'Overlays are slowing the map',
+                      body, dismissed);
     } else {
       // Only if utils.js failed to load: better a blocking dialog than a silent one.
       try { alert(body); } catch (_) {}
@@ -2405,9 +2670,13 @@ function _wfsCycleEnd() {
   let feats = 0, layers = 0;
   _wfsFeatureTotals.forEach(n => { feats += n; layers++; });
   if (typeof nvLog === 'function') {
-    nvLog('wfs cycle', (took / 1000).toFixed(1) + 's', 'layers', layers, 'features', feats);
+    nvLog('wfs cycle', (took / 1000).toFixed(1) + 's',
+          'read ' + (_wfsReadMs / 1000).toFixed(1) + 's',
+          _wfsStalledMs ? 'stalled ' + (_wfsStalledMs / 1000).toFixed(1) + 's' : '',
+          'layers', layers, 'features', feats);
   }
-  window._nvLastWfsCycle = { ms: took, layers, features: feats };
+  window._nvLastWfsCycle = { ms: took, layers, features: feats,
+                             readMs: _wfsReadMs, stalledMs: _wfsStalledMs };
   const w = window._nvWorstWfsCycle;
   if (!w || took > w.ms) window._nvWorstWfsCycle = window._nvLastWfsCycle;
 
@@ -3048,7 +3317,14 @@ const _WFSLayer = L.Layer.extend({
           /* The same generation check the response already passes through, repeated per chunk:
              a build that started for a view the user has since left must not keep spending main
              thread on it, and must take its half-built layer with it when it goes. */
-          if (reqId !== this._reqId) { try { map.removeLayer(gj); } catch(_) {} return; }
+          /* ⚠ _done() is not optional here, and leaving it out cost a field session: the build
+             surrenders but the QUEUE stays occupied, so no other reply can be read until the 20 s
+             watchdog closes the job. Measured 2026-09-02 12:10 — five watchdog closures spaced
+             exactly 20 s apart, a cycle open 114 s, roughly 100 of the session's 148 s spent
+             wedged. And it amplifies: every pan during a build supersedes it, so the more the map
+             is moved the more of the wait is this. The check at the head of _render already
+             released the queue this way; these three later ones did not. */
+          if (reqId !== this._reqId) { try { map.removeLayer(gj); } catch(_) {} _done(); return; }
           let _nf = 0, _nv = 0;
           while (_i < _feats.length && _nf < _CHUNK_FEATS && _nv < _CHUNK_VERTS) {
             try { gj.addData(_feats[_i]); } catch(_) {}
@@ -3186,7 +3462,8 @@ const _WFSLayer = L.Layer.extend({
        The latch is per layer, so several failing layers still produce several reports: the toast
        side of that is collected by _reportWfsError, the log side deliberately is not. */
     const _errOnce = msg => {
-      if (reqId !== this._reqId) return;
+      // Same rule: a stale generation still has to give the queue back before it walks away.
+      if (reqId !== this._reqId) { _done(); return; }
       /* Before the latch, deliberately: a view whose request FAILED must not count as covered,
          or the guard would treat the failure as a fetched result and never retry it. The latch
          below rations the toast, it must not ration this. */
@@ -3219,7 +3496,8 @@ const _WFSLayer = L.Layer.extend({
       }
     };
     const _parseTimed = text => {
-      if (reqId !== this._reqId) return;
+      // Superseded before the parse even began — the queue must not be held for it either.
+      if (reqId !== this._reqId) { _done(); return; }
       // Try JSON first (GeoServer, QGIS Server, etc.)
       try { _render(JSON.parse(text)); return; } catch(_) {}
       // GML fallback: OL parser first (standard GML), then manual DOM parser (MapServer / non-standard NS)
@@ -3278,7 +3556,7 @@ const _WFSLayer = L.Layer.extend({
     _wfsCycleBegin();
     _wfsInFlight++;
     let landed = false;
-    const _arrived = () => { if (landed) return; landed = true; _wfsInFlight = Math.max(0, _wfsInFlight - 1); };
+    const _arrived = () => { if (landed) return; landed = true; _wfsArrivedThisCycle++; _wfsInFlight = Math.max(0, _wfsInFlight - 1); };
     if (window.cordova && cordova.plugin && cordova.plugin.http) {
       cordova.plugin.http.sendRequest(url, { method:'get', responseType:'arraybuffer' },
         res => { _arrived(); _wfsEnqueueParse(this, () => _parse(_decodeXmlBuffer(res.data))); },
