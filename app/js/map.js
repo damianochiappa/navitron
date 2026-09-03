@@ -485,10 +485,28 @@ const _STOP_MS     = 4000;  // ms — no real progress this long (null speed) �
    leaves the marker within 5% of centre. Pixels, not metres, so it holds at every zoom. */
 const _FOLLOW_MIN_PX = 24;
 
-function _makeNavArrowIcon(heading) {
-  const rot = (heading != null && isFinite(heading)) ? heading : 0;
+/* The two heading icons carry NO angle of their own: the direction is a marker option
+   (`rotation`, radians) that leaflet-rotate applies inside the same _setPos it already runs to
+   reposition every marker on a bearing change. Two things came out of that, measured on the
+   bench and not assumed:
+   - the icon HTML used to be rebuilt on every GPS fix, purely to change one angle: `setIcon`
+     goes through DivIcon.createIcon, which rewrites innerHTML, so the inner div — the one
+     carrying filter:drop-shadow, i.e. the one that gets its own compositing layer — was
+     destroyed and recreated about once a second. Counted: 10 subtree rebuilds over 10 updates
+     before, 0 after, with the arrow still turning. The screen result is identical to the
+     pixel: 20 combinations of map bearing x travel direction, worst angle difference 0.000
+     deg and worst centre shift 0.000 px, read through getScreenCTM (which composes every
+     transform above the icon, so it answers about the screen and not about our markup).
+   - `rotateWithView` adds the map's own bearing, which removes the manual `+ map.getBearing()`
+     the arrow used to do, and fixes a defect that arithmetic could not: the angle was baked in
+     at fix time, so turning the map by hand BETWEEN fixes left the arrow pointing the old way
+     until the next one arrived. Measured: map turned to 90 with no new fix read 0 deg before
+     and 90 deg after. The aeroplane never did the addition at all, so on a turned map it was
+     wrong by the whole bearing — same fix, and it is what "pointing along travel" means: a
+     direction over the ground, not over the screen. */
+function _makeNavArrowIcon() {
   return L.divIcon({
-    html: `<div style="width:32px;height:32px;transform:rotate(${rot}deg);transform-origin:center;` +
+    html: `<div style="width:32px;height:32px;transform-origin:center;` +
           `filter:drop-shadow(0 1px 4px rgba(0,0,0,.6))">` +
           `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32">` +
           `<polygon points="12,2 20,20 12,15 4,20" fill="#4f8ef7" stroke="white" stroke-width="1.5"/>` +
@@ -500,10 +518,9 @@ function _makeNavArrowIcon(heading) {
   });
 }
 
-function _makeAirplaneIcon(heading) {
-  const rot = (heading != null && isFinite(heading)) ? heading : 0;
+function _makeAirplaneIcon() {
   return L.divIcon({
-    html: `<div style="width:34px;height:34px;transform:rotate(${rot}deg);transform-origin:center;` +
+    html: `<div style="width:34px;height:34px;transform-origin:center;` +
           `filter:drop-shadow(0 1px 5px rgba(0,0,0,.7))">` +
           `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="34" height="34" fill="#4f8ef7">` +
           `<path d="M21 16v-2l-8-5V3.5C13 2.67 12.33 2 11.5 2S10 2.67 10 3.5V9l-8 5v2l8-2.5V19` +
@@ -514,6 +531,12 @@ function _makeAirplaneIcon(heading) {
     iconAnchor:  [17, 17],
     popupAnchor: [0, -20]
   });
+}
+
+/* Degrees in, radians out, and a non-finite heading reads as zero: the two callers below take
+   their angle from the GPS, which reports null often enough that this cannot be an assertion. */
+function _headingRad(deg) {
+  return (deg != null && isFinite(deg)) ? deg * (Math.PI / 180) : 0;
 }
 
 const GpsControl = L.Control.extend({
@@ -621,20 +644,22 @@ function gpsUpdate(pos) {
   const _kind = _isFlying ? 'plane'
               : (typeof navIsActive === 'function' && navIsActive() && _smoothBearing != null && _navProfMarker !== 'walking') ? 'arrow'
               : 'dot';
-  // Marker icons are screen-fixed (leaflet-rotate rotateWithView:false), while the map
-  // is rotated track-up via setBearing(-_smoothBearing). Add the current map bearing so the
-  // arrow points along travel instead of double-counting the heading.
-  const _icon = () => _kind === 'plane' ? _makeAirplaneIcon(pos.coords.heading)
-                                        : _makeNavArrowIcon(_smoothBearing + map.getBearing());
+  /* The heading is the direction of travel over the GROUND, so it is given to the marker as an
+     angle and left to leaflet-rotate, which adds the map's own bearing (rotateWithView) inside
+     the _setPos every marker already runs on a bearing change. See _makeNavArrowIcon above for
+     what this replaced and what was measured. The rotation is written BEFORE setLatLng on
+     purpose: setLatLng calls update(), so position and angle land in one write instead of two. */
+  const _rot  = () => _kind === 'plane' ? _headingRad(pos.coords.heading) : _headingRad(_smoothBearing);
+  const _icon = () => _kind === 'plane' ? _makeAirplaneIcon() : _makeNavArrowIcon();
   const _popupWasOpen = !!(gpsMarker && gpsMarker.isPopupOpen && gpsMarker.isPopupOpen());
   if (gpsMarker && _gpsMarkerKind === _kind) {
+    if (_kind !== 'dot') gpsMarker.options.rotation = _rot();
     gpsMarker.setLatLng(ll);
-    if (_kind !== 'dot') gpsMarker.setIcon(_icon());
   } else {
     if (gpsMarker) map.removeLayer(gpsMarker);
     gpsMarker = (_kind === 'dot')
       ? L.circleMarker(ll, { radius: 8, color: '#4f8ef7', fillColor: '#fff', fillOpacity: 1, weight: 3 })
-      : L.marker(ll, { icon: _icon(), zIndexOffset: 1000 });
+      : L.marker(ll, { icon: _icon(), rotation: _rot(), rotateWithView: true, zIndexOffset: 1000 });
     /* autoPan off, for the same reason as the WFS and drawing popups. This balloon is anchored
        to a marker that moves at every fix: Leaflet has an open popup follow its source, and the
        follow calls _adjustPan, which stops the running pan animation and slides the map until
@@ -3560,9 +3585,33 @@ const _WFSLayer = L.Layer.extend({
     if (window.cordova && cordova.plugin && cordova.plugin.http) {
       cordova.plugin.http.sendRequest(url, { method:'get', responseType:'arraybuffer' },
         res => { _arrived(); _wfsEnqueueParse(this, () => _parse(_decodeXmlBuffer(res.data))); },
-        () => {
+        /* ⚠ The error callback RECEIVES the response body on a non-2xx, and this one used to
+           throw it away. Measured cost, 02/09: IGM's us:OilGasAppurtenance answers 400 to every
+           request — its mapfile names a geometry column ('shape') that the PostGIS table does not
+           have — and for a whole ride the layer reported itself as a bare "request failed" while
+           the server had already explained the fault in 601 bytes of ows:ExceptionReport.
+           Since _errShown is only re-armed by a GOOD response, that one toast at second 4 was the
+           only word the user ever got about a layer that stayed dead and kept being retried.
+           The fetch path below never had this blind spot: fetch RESOLVES on a 400, so the body
+           reaches _parse and comes back out as the <ExceptionReport> message it builds. Only the
+           cordova transport took the blind path — i.e. only the device, never the bench, which is
+           why it went unseen for so long.
+           The status is the reliable half and goes in first; the exception text is best effort,
+           since the plugin's body arrives as an opaque field. Truncated at 60 like the parse-side
+           diagnostic above, because _errOnce feeds the toast and the log the same string. */
+        err => {
           _arrived();
-          if (reqId === this._reqId) _errOnce(this._name() + ': request failed');
+          if (reqId === this._reqId) {
+            let detail = 'request failed';
+            if (err && err.status) detail += ' (HTTP ' + err.status + ')';
+            try {
+              const _exc = new DOMParser()
+                .parseFromString(String((err && err.error) || ''), 'application/xml')
+                .querySelector('ExceptionText,exceptionText');
+              if (_exc) detail += ': ' + _exc.textContent.trim().substring(0, 60);
+            } catch(_) {}
+            _errOnce(this._name() + ': ' + detail);
+          }
           _wfsCycleMaybeEnd();   // a failure can be what completes the cycle
         }
       );

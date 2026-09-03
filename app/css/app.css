@@ -821,9 +821,27 @@ body:has(#flight-panel:not(.hidden)) #toast     { bottom: calc(var(--lane-bottom
   transform: translateZ(0);
   backface-visibility: hidden;
 }
-/* The needle animates its own transform, so it is worth isolating on its own:
-   its repaints then stop dirtying the buttons and the attribution beside it. */
-#compass-svg { will-change: transform; }
+/* ⛔ #compass-svg used to carry `will-change: transform`, added 19/07 (e262c85) so the needle's
+   repaints would "stop dirtying the buttons and the attribution beside it". Removed 03/09, for
+   two reasons that should also stop it coming back.
+   It no longer has a case to optimise. That line was written when the needle followed the
+   MAGNETOMETER and redrew at 60 Hz — the same commit added a low-pass filter for exactly that.
+   af2d13f, the very next day, dropped deviceorientation: the needle now follows the map's
+   bearing, so it moves if and only if the map turns (compass.js redraws it on 'rotate', plus
+   three one-off events: start, tap, navigation on/off). And when the map turns, every pane is
+   re-transformed and every marker repositioned anyway. The scenario it guarded — the needle
+   moving while the rest is still — cannot happen any more.
+   And it had a cost the comment never accounted for: promoting a CHILD splits the parent's
+   composited surface. Everything painted before it stays in the corner's backing, everything
+   painted after it needs a second surface above. Measured order in this corner is compass, nav,
+   gps, attribution — so the second surface holds exactly the three controls the device reports
+   flashing together on 03/09, and the compass, which is painted first, is the one that does not.
+   Nothing else separates them: 24 computed properties compared across the four, and there is no
+   property where nav and gps agree and the compass differs.
+   ⚠ This is the reason to suspect, not proof: whether the two surfaces actually merge again is
+   decided by the device's compositor, and headless Chromium does not composite the same way.
+   If the flashing survives this, the reading was wrong — but the line still has no case to
+   optimise, so it should stay out either way. */
 
 .leaflet-bar {
   border-radius: var(--r-sm) !important;
