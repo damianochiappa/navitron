@@ -1318,6 +1318,13 @@ const _WMSImageLayer = L.Layer.extend({
 
   onRemove(map) {
     clearTimeout(this._timer);
+    /* Invalidate any in-flight request, as the WFS layer already does. The success callback
+       only checks the generation, so without this a reply landing after the layer was switched
+       off still runs _show(): it adds its image overlay to the map and assigns this._overlay,
+       AFTER _removeOverlay() has run — and nothing would ever take that frame off again.
+       The hasLayer test on the -2 retry path below is kept as well; it now guards a case this
+       already covers, which is the right way round for two independent checks. */
+    this._reqId = (this._reqId || 0) + 1;
     map.off('moveend', this._onViewChange, this);
     map.off('zoomend resize', this._schedule, this);
     map.off('rotate', this._onRotate, this);
@@ -1537,7 +1544,17 @@ const _WMSImageLayer = L.Layer.extend({
     // Surface a broken service once per failure period (not on every pan) so the user sees
     // why nothing is drawn instead of a silent blank. Latch clears on the next good frame.
     const _notifyErr = detail => {
-      if (reqId !== this._reqId || this._errShown) return;
+      if (reqId !== this._reqId) return;
+      /* Before the latch, deliberately, and for the same reason the WFS layer clears it: a view
+         whose request FAILED must not count as covered. `_fetchedBounds` is recorded when the
+         request is ISSUED, so without this the coverage guard reads a failure as a fetched
+         result and never asks again — the layer stays blank until the screen leaves those
+         bounds. The latch below rations the toast; it must not ration this.
+         Not hypothetical: four HTTP 500 from the Agenzia WMS inside one minute, field
+         diagnostic 2026-09-05. Clearing cannot loop — only moveend asks again, through the
+         300 ms debounce, so nothing is re-requested while the user sits still. */
+      this._fetchedBounds = null;
+      if (this._errShown) return;
       this._errShown = true;
       const who = this.options.attribution ? '"' + this.options.attribution + '"' : 'layer';
       _reportLayerError(who, 'WMS ' + who + ' — ' + detail);
@@ -2021,6 +2038,25 @@ function _selToggle(key, layer, baseStyle, label) {
 }
 
 function _selExit() {
+  /* Reset from what is ON THE MAP, not only from `_selLayers`. That map holds one screen layer
+     per key and is rewritten on every WFS refresh, so an entry can point at a layer that has
+     since been discarded — and then the highlight the user is looking at belongs to a different
+     object and survives the clear. Walking the live `_geo` of each WFS layer asks the question
+     the user is actually asking: is anything still highlighted on screen? It runs only on Clear,
+     so a pass over the features costs nothing that matters. */
+  _wfsRegistry.forEach(e => {
+    const geo = e.layer && e.layer._geo;
+    if (!geo) return;
+    try {
+      geo.eachLayer(l => {
+        if (!l.feature || !_selKeys.has(_selKey(l.feature))) return;
+        try { l.setStyle(l._selBase || (e.layer.options && e.layer.options.style)); } catch(_) {}
+        try { l.unbindTooltip(); } catch(_) {}
+      });
+    } catch(_) {}
+  });
+  /* Still walked as well: a selection can be held by a layer whose WFS layer has left the
+     registry, and that one is reachable only through `_selLayers`. */
   _selLayers.forEach((l, k) => {
     try { l.setStyle(l._selBase); } catch(_) {}
     try { l.unbindTooltip(); } catch(_) {}
@@ -3349,7 +3385,15 @@ const _WFSLayer = L.Layer.extend({
              wedged. And it amplifies: every pan during a build supersedes it, so the more the map
              is moved the more of the wait is this. The check at the head of _render already
              released the queue this way; these three later ones did not. */
-          if (reqId !== this._reqId) { try { map.removeLayer(gj); } catch(_) {} _done(); return; }
+          /* ⚠ `this._geo` has to go back to the layer that is still ON the map. It was pointed at
+             `gj` before the first chunk, but `prev` is only removed at the END of a completed
+             build — so on this path `prev` is still displayed. Leaving the reference on the
+             discarded `gj` strands it: nothing points at the visible layer any more, onRemove
+             takes the wrong one when the layer is switched off, and every superseded build
+             abandons another copy on top of the map. Field diagnostic 2026-09-05: 2016 paths for
+             1011 features, then 2616, with the cadastre still on screen after its layer had been
+             turned off and its selection cleared. */
+          if (reqId !== this._reqId) { try { map.removeLayer(gj); } catch(_) {} this._geo = prev; _done(); return; }
           let _nf = 0, _nv = 0;
           while (_i < _feats.length && _nf < _CHUNK_FEATS && _nv < _CHUNK_VERTS) {
             try { gj.addData(_feats[_i]); } catch(_) {}
