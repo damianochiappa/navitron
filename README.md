@@ -24,6 +24,8 @@ To update, just install the latest release over the existing one: the app update
 **Requirements:** Android 10+.
 
 > Navitron is sideloaded, not on the Play Store. Android will show an "unknown sources" warning — this is expected.
+>
+> If you would rather install and update through the store, [GISCatasto](https://play.google.com/store/apps/details?id=com.geotool.giscatasto) — a build derived from this project, available in Italy only — is on Google Play. The two apps are maintained separately and their features do not fully overlap.
 
 ---
 
