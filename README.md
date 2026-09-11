@@ -38,7 +38,7 @@ To update, just install the latest release over the existing one: the app update
 - **Offline tile cache** — download a tiled basemap within a KML boundary for offline use (Service Worker). The few that do not qualify — a non-tiled WMS, ones needing credentials, ones whose provider forbids bulk copying — stay listed but disabled, with the reason shown; for the others a notice about the provider's terms appears first
 - **KML/KMZ/GeoJSON/GPX import** — layer management, vertex editing, attribute popup, dissolve polygons (turf.js), rename, export
 - **Coordinate tools** — go-to by DD/DMS/UTM/MGRS, format converter, bookmarks
-- **Maps** — OpenTopoMap, OpenStreetMap, ESRI (Satellite, Topo, NatGeo), Stadia Satellite, CartoDB; custom WMS/WMTS/ArcGIS layers with opacity control
+- **Maps** — OpenTopoMap, OpenStreetMap, ESRI (Satellite, Topo, NatGeo), Stadia Satellite; custom WMS/WMTS/ArcGIS layers with opacity control
 - **GPS** — real-time position, accuracy circle, UTM/MGRS coordinates, altitude above sea level from a bundled EGM96 geoid table (works with no network); terrain elevation for a point by long-pressing it on the map (Open-Meteo)
 - **Navigation** — OSRM routing (driving, cycling, walking); heading-up map rotation with direction arrow; off-route detection and automatic recalculation; speed/distance/ETA HUD; walking view cone
 - **Track recording** — GPS track with stats; export as GPX or KML

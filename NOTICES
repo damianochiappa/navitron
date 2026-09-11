@@ -74,7 +74,9 @@ Open-Meteo elevation (runtime API, no local library)
   https://open-meteo.com/
 
 Default tile providers (public distribution)
-  - Satellite Hybrid layer ("google_hybrid" key): Stadia Maps "alidade_satellite" (BSD-2-Clause attribution)
-  - Street Map layer  ("google_maps"  key): CartoDB Voyager (free for non-commercial use, attribution required)
+  - Satellite Hybrid layer ("google_hybrid" key): Stadia Maps "alidade_satellite"
+    Attribution required: "(c) Stadia Maps (c) OpenMapTiles (c) OpenStreetMap", plus
+    "(c) CNES, Distribution Airbus DS, (c) Airbus DS, (c) PlanetObserver" for the satellite imagery.
+    https://stadiamaps.com/attribution/
   Note: the keys "google_*" are historical names; the public build does NOT use Google Maps tiles.
   Users can override these via the optional, git-excluded app/js/basemaps-private.js file.

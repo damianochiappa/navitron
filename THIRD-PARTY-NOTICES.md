@@ -79,7 +79,6 @@ Navitron includes the following open-source libraries. Their licenses are reprod
 - https://open-meteo.com/
 
 ## Default tile providers (public distribution)
-- **Satellite Hybrid** layer (`google_hybrid` key): [Stadia Maps](https://stadiamaps.com) "alidade_satellite"
-- **Street Map** layer (`google_maps` key): [CartoDB Voyager](https://carto.com/basemaps/) — free for non-commercial use, attribution required
+- **Satellite Hybrid** layer (`google_hybrid` key): [Stadia Maps](https://stadiamaps.com/attribution/) "alidade_satellite" — attribution required: "© Stadia Maps © OpenMapTiles © OpenStreetMap", plus "© CNES, Distribution Airbus DS, © Airbus DS, © PlanetObserver" for the satellite imagery.
 
 The `google_*` keys are historical identifiers; the public build does **not** use Google Maps tiles. Users can locally override these via `app/js/basemaps-private.js` (excluded from the repo via `.gitignore`).

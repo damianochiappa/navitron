@@ -71,7 +71,7 @@ Per aggiornare, installa la release più recente sopra quella esistente: l'app s
 - **Cache tile offline** — scarica una basemap a tile entro un confine KML per l'uso offline (Service Worker). Le poche che non si prestano — un WMS non a tile, quelle con credenziali, quelle il cui fornitore vieta la copia massiva — restano in elenco ma disattivate, con il motivo scritto; sulle altre compare prima un avviso sulle condizioni d'uso del fornitore
 - **Import KML/KMZ/GeoJSON/GPX** — gestione layer, editing dei vertici, popup degli attributi, dissolve dei poligoni (turf.js), rinomina, export
 - **Strumenti coordinate** — vai-a per DD/DMS/UTM/MGRS, convertitore di formato, segnaposti
-- **Mappe** — OpenTopoMap, OpenStreetMap, ESRI (Satellite, Topo, NatGeo), Stadia Satellite, CartoDB; layer WMS/WMTS/ArcGIS personalizzati con controllo opacità
+- **Mappe** — OpenTopoMap, OpenStreetMap, ESRI (Satellite, Topo, NatGeo), Stadia Satellite; layer WMS/WMTS/ArcGIS personalizzati con controllo opacità
 - **GPS** — posizione in tempo reale, cerchio di accuratezza, coordinate UTM/MGRS, quota sul livello del mare ricavata dalla tabella del geoide EGM96 a bordo (funziona anche senza rete); la quota del terreno di un punto si legge tenendolo premuto sulla mappa (Open-Meteo)
 - **Navigazione** — routing OSRM (auto, bici, a piedi); rotazione mappa heading-up con freccia di direzione; rilevamento fuori-rotta e ricalcolo automatico; HUD velocità/distanza/ETA; cono di visuale a piedi
 - **Registrazione tracce** — traccia GPS con statistiche; export in GPX o KML
